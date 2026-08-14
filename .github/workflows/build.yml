@@ -1,0 +1,47 @@
+name: Build Application
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  validate-master-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require develop branch for master PRs
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$BASE_REF" = "master" ] && { [ "$HEAD_REF" != "develop" ] || [ "$HEAD_REPOSITORY" != "$REPOSITORY" ]; }; then
+            echo "::error::PRs into master must come from the develop branch in this repository."
+            exit 1
+          fi
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: 'yarn'
+
+      - run: yarn install --frozen-lockfile
+
+      - run: yarn nx format:check
+      - run: yarn nx run-many -t lint build typecheck

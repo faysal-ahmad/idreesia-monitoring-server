@@ -61,6 +61,7 @@
     }
   ],
   "analytics": false,
+  "defaultBase": "develop",
   "generators": {
     "@nx/react": {
       "application": {
