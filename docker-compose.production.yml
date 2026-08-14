@@ -1,13 +1,13 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg18
     restart: unless-stopped
     environment:
       POSTGRES_DB: idreesia_config
       POSTGRES_USER: idreesia
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - postgres-data:/var/lib/postgresql/data:cached
+      - postgres-data:/var/lib/postgresql:cached
       - ./configs/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U idreesia']

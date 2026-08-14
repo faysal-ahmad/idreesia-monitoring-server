@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg18
     restart: unless-stopped
     environment:
       POSTGRES_DB: idreesia_config
@@ -9,7 +9,7 @@ services:
     ports:
       - '5432:5432'
     volumes:
-      - postgres-dev:/var/lib/postgresql/data:cached
+      - postgres-dev:/var/lib/postgresql:cached
       - ./configs/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U idreesia']
