@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: idreesia_config
+      POSTGRES_USER: idreesia
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data:cached
+      - ./configs/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U idreesia']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  security-server-ui:
+    build:
+      context: .
+      dockerfile: ./packages/security-server-ui/Dockerfile.production
+    ports:
+      - '4200:4200'
+    restart: unless-stopped
+
+  security-server:
+    build:
+      context: .
+      dockerfile: ./packages/security-server/Dockerfile.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    env_file: ./packages/security-server/.env
+
+volumes:
+  postgres-data: {}

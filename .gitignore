@@ -24,6 +24,10 @@ node_modules
 !.vscode/launch.json
 !.vscode/extensions.json
 
+# environment
+.env
+!.env.sample
+
 # misc
 /.sass-cache
 /connect.lock
@@ -48,3 +52,6 @@ Thumbs.db
 .nx/polygraph
 .nx/self-healing
 .nx/migrate-runs
+vite.config.*.timestamp*
+vitest.config.*.timestamp*
+test-output
