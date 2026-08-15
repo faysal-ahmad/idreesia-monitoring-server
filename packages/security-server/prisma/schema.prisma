@@ -1,10 +1,99 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector(schema: "security_server")]
+  schemas    = ["security_server"]
 }
 
-// Models go here as functionality is added.
+enum VideoFeedSourceType {
+  RTSP
+  USB
+
+  @@schema("security_server")
+}
+
+// A configured camera ("channel") the recognition engine reads frames from.
+// Type-specific connection details (RTSP host/credentials, USB device index/path)
+// live in `config` rather than dedicated columns per type.
+model VideoFeedSource {
+  id                  String              @id @default(cuid())
+  name                String
+  type                VideoFeedSourceType
+  config              Json
+  enabled             Boolean             @default(true)
+  // Only the seeded default webcam channel is non-removable.
+  removable           Boolean             @default(true)
+  // null = use SFace's hardcoded reference default; set via the per-channel test-match calibration flow.
+  similarityThreshold Float?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  alerts Alert[]
+
+  @@schema("security_server")
+}
+
+// A watch-list person. isTest separates calibration profiles (excluded from
+// the live alert pipeline's match set) from real monitoring profiles.
+model MonitoringProfile {
+  id        String   @id @default(cuid())
+  name      String
+  isTest    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  images MonitoringProfileImage[]
+  alerts Alert[]
+
+  @@schema("security_server")
+}
+
+// One enrollment photo for a MonitoringProfile, with its own SFace embedding
+// computed at upload time (embeddings are not aggregated per person).
+model MonitoringProfileImage {
+  id        String                     @id @default(cuid())
+  profileId String
+  profile   MonitoringProfile          @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  image     Bytes
+  // 128-d SFace embedding. Prisma has no native vector type support, so reads/
+  // writes to this column go through $queryRaw/$executeRaw.
+  embedding Unsupported("vector(128)")
+  createdAt DateTime                   @default(now())
+
+  @@schema("security_server")
+}
+
+// Detection history: who was detected, when, by which channel, on what evidence, and how
+// confident the match was.
+model Alert {
+  id                  String            @id @default(cuid())
+  timestamp           DateTime          @default(now())
+  monitoringProfileId String
+  // Deleting a monitoring profile wipes its alert history.
+  monitoringProfile   MonitoringProfile @relation(fields: [monitoringProfileId], references: [id], onDelete: Cascade)
+  channelId           String
+  // Deleting a channel with alert history is blocked (no cascade) to preserve the log.
+  channel             VideoFeedSource   @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  // The (downscaled) frame that triggered this alert, JPEG-encoded — the visual evidence an
+  // admin reviews to confirm the match themselves.
+  image               Bytes
+  // Cosine similarity between the detected face and the matched profile's embedding at alert time.
+  similarityScore     Float
+
+  @@schema("security_server")
+}
+
+// App-wide settings — a single row (fixed id), extended with new columns as new settings are
+// added, rather than a generic key-value store, since the option set is small and well-defined.
+model Configuration {
+  id                  String @id @default("default")
+  // How long Alert rows (and their frame images) are kept before the daily cleanup job deletes them.
+  alertsRetentionDays Int    @default(7)
+
+  @@schema("security_server")
+}

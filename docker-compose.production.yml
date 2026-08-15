@@ -3,7 +3,7 @@ services:
     image: pgvector/pgvector:pg18
     restart: unless-stopped
     environment:
-      POSTGRES_DB: idreesia_config
+      POSTGRES_DB: idreesia
       POSTGRES_USER: idreesia
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
@@ -19,6 +19,8 @@ services:
     build:
       context: .
       dockerfile: ./packages/security-server-ui/Dockerfile.production
+    depends_on:
+      - security-server
     ports:
       - '4200:4200'
     restart: unless-stopped

@@ -1,5 +1,23 @@
 FROM node:22.17.0-alpine3.22
 
+# This is a yarn workspace with a single shared node_modules — @u4/opencv4nodejs
+# (a security-server-only dependency) still needs to compile here since `yarn
+# install` resolves the whole workspace's tree, not just this package's own deps.
+RUN apk --no-cache add \
+  opencv-dev \
+  build-base \
+  g++ \
+  python3 \
+  pkgconfig
+ENV OPENCV4NODEJS_DISABLE_AUTOBUILD=1
+ENV OPENCV_INCLUDE_DIR=/usr/include/opencv4
+ENV OPENCV_LIB_DIR=/usr/lib
+ENV MAKEFLAGS=-j1
+# Both dev containers share the repo's .nx cache/lock state via the bind mount below —
+# a persistent daemon from one container gets confused by the other's runs (false
+# "recursive task invocation" errors), so each container runs Nx as a one-shot process.
+ENV NX_DAEMON=false
+
 WORKDIR /app
 
 EXPOSE 4200

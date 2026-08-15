@@ -1,14 +1,20 @@
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app/app.module';
 
-// Standalone Nest context — this service has no HTTP/RPC listener, it's a
-// long-running background worker. Wire scheduled jobs/queue consumers into
-// AppModule and enableShutdownHooks lets Nest clean them up on SIGTERM.
+// HTTP server (management API for security-server-ui) plus the existing scheduled-job
+// support (ScheduleModule/AppService's heartbeat, and later the frame-processing loop).
+// enableShutdownHooks lets Nest clean both up on SIGTERM.
 async function bootstrap() {
-  const app = await NestFactory.createApplicationContext(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.enableCors();
+  app.setGlobalPrefix('api');
   app.enableShutdownHooks();
-  Logger.log('🚀 security-server is running');
+
+  const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+  await app.listen(port, '0.0.0.0');
+  Logger.log(`🚀 security-server is running on port ${port}`);
 }
 
 bootstrap();

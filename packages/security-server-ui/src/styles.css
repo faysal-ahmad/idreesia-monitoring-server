@@ -1,1 +1,65 @@
 /* You can add global styles to this file, and also import other style files */
+
+.list-container {
+  width: 100%;
+  overflow: hidden;
+}
+
+.list-table .ant-table-container {
+  border: 1px solid #d0d5dd !important;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.list-table .ant-table-thead > tr > th {
+  background: #f3f4f6 !important;
+  border-bottom: 1px solid #d0d5dd !important;
+  color: #344054;
+  font-weight: 600;
+}
+
+.list-table .ant-table-thead > tr > th:not(:last-child),
+.list-table .ant-table-tbody > tr > td:not(:last-child) {
+  border-inline-end: 1px solid #cfd4dc !important;
+}
+
+.list-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #cfd4dc !important;
+}
+
+.list-table .ant-table-tbody > tr:hover > td {
+  background: #f5f9ff !important;
+}
+
+.list-table .ant-table-footer {
+  border-top: 1px solid #d0d5dd;
+  background: #fafafa;
+}
+
+.list-table .ant-table-body {
+  overflow-x: hidden !important;
+}
+
+.list-table .ant-table-cell-scrollbar {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.list-actions-column {
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.list-actions-icon {
+  cursor: pointer;
+  font-size: 20px;
+  padding-right: 7px;
+}
+
+.list-actions-icon:last-child {
+  padding-right: 0;
+}
