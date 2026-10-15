@@ -56,14 +56,18 @@ model MonitoringProfile {
 // One enrollment photo for a MonitoringProfile, with its own SFace embedding
 // computed at upload time (embeddings are not aggregated per person).
 model MonitoringProfileImage {
-  id        String                     @id @default(cuid())
-  profileId String
-  profile   MonitoringProfile          @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  image     Bytes
+  id                    String                     @id @default(cuid())
+  profileId             String
+  profile               MonitoringProfile          @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  image                 Bytes
   // 128-d SFace embedding. Prisma has no native vector type support, so reads/
   // writes to this column go through $queryRaw/$executeRaw.
-  embedding Unsupported("vector(128)")
-  createdAt DateTime                   @default(now())
+  embedding             Unsupported("vector(128)")
+  // The pipeline version that produced `embedding` (see EMBEDDING_MODEL_VERSION). Embeddings from
+  // different versions aren't comparable; anything not on the current version is recomputed from
+  // `image` at startup by EmbeddingBackfillService. null = produced before versioning existed.
+  embeddingModelVersion String?
+  createdAt             DateTime                   @default(now())
 
   @@schema("security_server")
 }

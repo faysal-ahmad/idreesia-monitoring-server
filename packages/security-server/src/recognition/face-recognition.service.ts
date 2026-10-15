@@ -14,6 +14,13 @@ const DST_POINTS: [number, number][] = [
 ];
 const DST_MEAN: [number, number] = [56.0262, 71.9008];
 
+// Tags every stored embedding with the pipeline that produced it, so a model upgrade or a fix to
+// the ported alignment math doesn't silently mix incomparable embeddings. The `+umeyama-fix`
+// suffix marks the V-transpose correction in getSimilarityTransformMatrix below - embeddings
+// produced before it came from unaligned faces. EmbeddingBackfillService recomputes anything
+// stored under a different version.
+export const EMBEDDING_MODEL_VERSION = 'yunet-2023mar+sface-2021dec+umeyama-fix';
+
 interface Svd2x2Result {
   s: [number, number];
   U: [[number, number], [number, number]];
@@ -127,24 +134,33 @@ function getSimilarityTransformMatrix(src: [number, number][]): [[number, number
       [m[1][0] * n[0][0] + m[1][1] * n[1][0], m[1][0] * n[0][1] + m[1][1] * n[1][1]],
     ] as [[number, number], [number, number]];
 
+  // svd2x2 returns V with the right singular vectors as its COLUMNS, i.e. A = U * S * V^T.
+  // Umeyama's rotation is U * diag(d) * V^T, so V has to be transposed here. Without this the
+  // estimate is wrong for every input - even landmarks already sitting exactly on DST_POINTS came
+  // back ~54px out in a 112x112 crop, so no face was ever actually aligned.
+  const Vt: [[number, number], [number, number]] = [
+    [V[0][0], V[1][0]],
+    [V[0][1], V[1][1]],
+  ];
+
   let t: [[number, number], [number, number]];
   if (rank === 1) {
     if (detU * detVt > 0) {
-      t = matMul2(U, V);
+      t = matMul2(U, Vt);
     } else {
       const d1 = -1;
       const ud: [[number, number], [number, number]] = [
         [U[0][0], U[0][1] * d1],
         [U[1][0], U[1][1] * d1],
       ];
-      t = matMul2(ud, V);
+      t = matMul2(ud, Vt);
     }
   } else {
     const ud: [[number, number], [number, number]] = [
       [U[0][0] * d[0], U[0][1] * d[1]],
       [U[1][0] * d[0], U[1][1] * d[1]],
     ];
-    t = matMul2(ud, V);
+    t = matMul2(ud, Vt);
   }
 
   let var1 = 0, var2 = 0;

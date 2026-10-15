@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
+import { IngestionModule } from '../ingestion/ingestion.module';
 import { RecognitionModule } from '../recognition/recognition.module';
+import { EmbeddingBackfillService } from './embedding-backfill.service';
 import { MonitoringProfileController } from './monitoring-profile.controller';
 import { MonitoringProfileService } from './monitoring-profile.service';
 
 @Module({
-  imports: [RecognitionModule],
+  imports: [RecognitionModule, IngestionModule],
   controllers: [MonitoringProfileController],
-  providers: [MonitoringProfileService],
+  providers: [MonitoringProfileService, EmbeddingBackfillService],
 })
 export class MonitoringProfileModule {}

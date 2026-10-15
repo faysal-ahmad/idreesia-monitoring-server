@@ -4,7 +4,7 @@ import * as cv from '@u4/opencv4nodejs';
 import { vectorToSql } from '../common/pgvector.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaceDetectionService } from '../recognition/face-detection.service';
-import { FaceRecognitionService } from '../recognition/face-recognition.service';
+import { EMBEDDING_MODEL_VERSION, FaceRecognitionService } from '../recognition/face-recognition.service';
 import { CreateMonitoringProfileDto, UpdateMonitoringProfileDto } from './monitoring-profile.schema';
 
 // Detection is run permissively so marginal faces are still surfaced as a warning rather
@@ -123,8 +123,8 @@ export class MonitoringProfileService {
     const id = randomUUID();
     const embeddingSql = vectorToSql(embedding);
     await this.prisma.$executeRaw`
-      INSERT INTO security_server."MonitoringProfileImage" (id, "profileId", image, embedding, "createdAt")
-      VALUES (${id}, ${profileId}, ${jpeg}, ${embeddingSql}::vector, now())
+      INSERT INTO security_server."MonitoringProfileImage" (id, "profileId", image, embedding, "embeddingModelVersion", "createdAt")
+      VALUES (${id}, ${profileId}, ${jpeg}, ${embeddingSql}::vector, ${EMBEDDING_MODEL_VERSION}, now())
     `;
 
     const [created] = await this.prisma.$queryRaw<{ id: string; createdAt: Date }[]>`

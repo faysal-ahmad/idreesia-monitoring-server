@@ -6,8 +6,6 @@ services:
       POSTGRES_DB: idreesia
       POSTGRES_USER: idreesia
       POSTGRES_PASSWORD: idreesia
-    ports:
-      - "5432:5432"
     volumes:
       - postgres-dev:/var/lib/postgresql:cached
       - ./configs/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -26,8 +24,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
     env_file: ./packages/security-server/.env
-    ports:
-      - "3000:3000"
     volumes:
       - .:/app
 
