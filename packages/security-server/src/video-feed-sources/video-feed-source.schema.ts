@@ -14,5 +14,14 @@ export const UpdateVideoFeedSourceSchema = z.object({
   config: z.record(z.string(), z.unknown()).optional(),
   enabled: z.boolean().optional(),
   similarityThreshold: z.number().min(0).max(1).nullable().optional(),
+  recognitionFps: z.number().min(0.1).max(30).optional(),
 });
 export type UpdateVideoFeedSourceDto = z.infer<typeof UpdateVideoFeedSourceSchema>;
+
+// Connection details straight from the add/edit form, verified before they're saved. channelId
+// (when editing) lets blank/redacted credentials fall back to the stored ones.
+export const VerifyVideoFeedSourceSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('RTSP'), config: z.record(z.string(), z.unknown()), channelId: z.string().optional() }),
+  z.object({ type: z.literal('USB'), config: z.record(z.string(), z.unknown()), channelId: z.string().optional() }),
+]);
+export type VerifyVideoFeedSourceDto = z.infer<typeof VerifyVideoFeedSourceSchema>;

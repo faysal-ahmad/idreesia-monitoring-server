@@ -34,6 +34,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
     env_file: ./packages/security-server/.env
+    volumes:
+      # Alert frame images (see ALERT_IMAGES_DIR) on a folder on the host machine. The server runs as
+      # UID 1001 (see Dockerfile.production), so that folder must be writable by UID 1001.
+      - ${ALERT_IMAGES_HOST_DIR:?Set ALERT_IMAGES_HOST_DIR to the host folder for alert images}:/data/alert-images
 
 volumes:
   postgres-data: {}

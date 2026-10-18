@@ -13,6 +13,14 @@ export interface UpdateVideoFeedSourceInput {
   config?: Partial<RtspConfig> & Partial<UsbConfig>;
   enabled?: boolean;
   similarityThreshold?: number | null;
+  recognitionFps?: number;
+}
+
+// channelId (when editing) lets blank/redacted credentials fall back to the stored ones.
+export interface VerifyVideoFeedSourceInput {
+  type: VideoFeedSourceType;
+  config: RtspConfig | UsbConfig;
+  channelId?: string;
 }
 
 export const videoFeedSourcesApi = {
@@ -22,6 +30,6 @@ export const videoFeedSourcesApi = {
   update: (id: string, input: UpdateVideoFeedSourceInput) =>
     api.patch<VideoFeedSource>(`/video-feed-sources/${id}`, input),
   remove: (id: string) => api.delete<void>(`/video-feed-sources/${id}`),
-  verify: (id: string) => api.post<VerifyResult>(`/video-feed-sources/${id}/verify`),
+  verify: (input: VerifyVideoFeedSourceInput) => api.post<VerifyResult>('/video-feed-sources/verify', input),
   testMatch: (id: string) => api.post<TestMatchResult>(`/video-feed-sources/${id}/test-match`),
 };

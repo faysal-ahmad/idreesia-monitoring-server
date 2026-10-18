@@ -1,8 +1,6 @@
 import {
-  CheckCircleOutlined,
   DeleteOutlined,
   ExperimentOutlined,
-  LoadingOutlined,
   PlusOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
@@ -10,7 +8,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   App,
   Button,
-  Image,
   Pagination,
   Popconfirm,
   Space,
@@ -23,36 +20,13 @@ import { useState } from 'react';
 import {
   ChannelFormModal,
   ChannelFormValues,
+  toApiInput,
 } from '../components/channel-form-modal';
 import { TestMatchModal } from '../components/test-match-modal';
 import { videoFeedSourcesApi } from '../api/video-feed-sources';
 import { VideoFeedSource } from '../api/types';
 
 const { Title, Link } = Typography;
-
-function toApiInput(values: ChannelFormValues) {
-  const config =
-    values.type === 'RTSP'
-      ? {
-          host: values.host!,
-          port: values.port!,
-          path: values.path ?? '',
-          username: values.username,
-          password: values.password,
-        }
-      : {
-          deviceIndex:
-            values.deviceIndex && /^\d+$/.test(values.deviceIndex)
-              ? Number(values.deviceIndex)
-              : values.deviceIndex!,
-        };
-  return {
-    name: values.name,
-    type: values.type,
-    enabled: values.enabled,
-    config,
-  };
-}
 
 export default function ChannelsPage() {
   const { message } = App.useApp();
@@ -63,7 +37,6 @@ export default function ChannelsPage() {
   );
   const [testMatchChannel, setTestMatchChannel] =
     useState<VideoFeedSource | null>(null);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -101,6 +74,7 @@ export default function ChannelsPage() {
       id: string;
       input: ReturnType<typeof toApiInput> & {
         similarityThreshold: number | null;
+        recognitionFps: number;
       };
     }) => videoFeedSourcesApi.update(id, input),
     onSuccess: () => {
@@ -140,29 +114,16 @@ export default function ChannelsPage() {
       ),
   });
 
-  const verifyMutation = useMutation({
-    mutationFn: videoFeedSourcesApi.verify,
-    onSuccess: (result) => {
-      if (result.reachable) {
-        message.success('Channel is reachable');
-        if (result.previewImage) setPreviewImage(result.previewImage);
-      } else {
-        message.error(result.error ?? 'Channel is not reachable');
-      }
-    },
-    onError: (error) =>
-      message.error(error instanceof Error ? error.message : 'Verify failed'),
-  });
-
   const handleSubmit = (values: ChannelFormValues) => {
     const input = toApiInput(values);
     if (editingChannel) {
       updateMutation.mutate({
         id: editingChannel.id,
-        // A cleared field comes back as null, which resets the channel to the default threshold.
+        // A cleared threshold comes back as null, which resets the channel to the default.
         input: {
           ...input,
           similarityThreshold: values.similarityThreshold ?? null,
+          recognitionFps: values.recognitionFps!,
         },
       });
     } else {
@@ -263,23 +224,10 @@ export default function ChannelsPage() {
               width: 120,
               align: 'right' as const,
               render: (_, record: VideoFeedSource) => {
-                const verifying =
-                  verifyMutation.isPending &&
-                  verifyMutation.variables === record.id;
                 const deleteDisabled =
                   !record.removable || record.alertCount > 0;
                 return (
                   <div className="list-actions-column">
-                    <Tooltip title="Verify">
-                      {verifying ? (
-                        <LoadingOutlined className="list-actions-icon" />
-                      ) : (
-                        <CheckCircleOutlined
-                          className="list-actions-icon"
-                          onClick={() => verifyMutation.mutate(record.id)}
-                        />
-                      )}
-                    </Tooltip>
                     <Tooltip title="Test Match">
                       <ExperimentOutlined
                         className="list-actions-icon"
@@ -345,17 +293,6 @@ export default function ChannelsPage() {
           setTestMatchChannel(null);
         }}
       />
-
-      {previewImage && (
-        <Image
-          style={{ display: 'none' }}
-          src={previewImage}
-          preview={{
-            visible: true,
-            onVisibleChange: (visible) => !visible && setPreviewImage(null),
-          }}
-        />
-      )}
     </div>
   );
 }

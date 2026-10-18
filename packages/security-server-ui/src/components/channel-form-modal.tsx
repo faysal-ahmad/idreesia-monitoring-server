@@ -1,4 +1,7 @@
+import { CheckCircleOutlined } from '@ant-design/icons';
+import { useMutation } from '@tanstack/react-query';
 import {
+  App,
   Button,
   Divider,
   Form,
@@ -10,6 +13,7 @@ import {
   Space,
 } from 'antd';
 import { useEffect } from 'react';
+import { videoFeedSourcesApi } from '../api/video-feed-sources';
 import { VideoFeedSource, VideoFeedSourceType } from '../api/types';
 
 export interface ChannelFormValues {
@@ -23,6 +27,41 @@ export interface ChannelFormValues {
   password?: string;
   deviceIndex?: string;
   similarityThreshold?: number | null;
+  recognitionFps?: number;
+}
+
+const CONNECTION_FIELDS: (keyof ChannelFormValues)[] = [
+  'type',
+  'host',
+  'port',
+  'path',
+  'username',
+  'password',
+  'deviceIndex',
+];
+
+export function toApiInput(values: ChannelFormValues) {
+  const config =
+    values.type === 'RTSP'
+      ? {
+          host: values.host!,
+          port: values.port!,
+          path: values.path ?? '',
+          username: values.username,
+          password: values.password,
+        }
+      : {
+          deviceIndex:
+            values.deviceIndex && /^\d+$/.test(values.deviceIndex)
+              ? Number(values.deviceIndex)
+              : values.deviceIndex!,
+        };
+  return {
+    name: values.name,
+    type: values.type,
+    enabled: values.enabled,
+    config,
+  };
 }
 
 interface ChannelFormModalProps {
@@ -44,6 +83,7 @@ export function ChannelFormModal({
   onSubmit,
   onToggleEnabled,
 }: ChannelFormModalProps) {
+  const { message } = App.useApp();
   const [form] = Form.useForm<ChannelFormValues>();
   const type = Form.useWatch('type', form);
   const enabled = Form.useWatch('enabled', form);
@@ -64,12 +104,45 @@ export function ChannelFormModal({
             ? String(channel.config.deviceIndex)
             : undefined,
         similarityThreshold: channel.similarityThreshold,
+        recognitionFps: channel.recognitionFps,
       });
     } else {
       form.resetFields();
       form.setFieldsValue({ type: 'USB', enabled: true, port: 554 });
     }
   }, [open, channel, form]);
+
+  // Verifies what's currently entered, before saving. Blank/redacted credentials on an
+  // existing channel fall back to its stored ones on the server.
+  const verifyMutation = useMutation({
+    mutationFn: videoFeedSourcesApi.verify,
+    onSuccess: (result) => {
+      if (result.reachable) {
+        message.success('Channel is reachable');
+      } else {
+        message.error(result.error ?? 'Channel is not reachable');
+      }
+    },
+    onError: (error) =>
+      message.error(error instanceof Error ? error.message : 'Verify failed'),
+  });
+
+  const verify = async () => {
+    // Only the connection fields need to be valid to verify; name etc. can still be blank.
+    await form.validateFields(CONNECTION_FIELDS);
+    const { type, config } = toApiInput(form.getFieldsValue(true));
+    verifyMutation.mutate({ type, config, channelId: channel?.id });
+  };
+
+  const verifyButton = (
+    <Button
+      icon={<CheckCircleOutlined />}
+      loading={verifyMutation.isPending}
+      onClick={() => verify().catch(() => undefined)}
+    >
+      Verify
+    </Button>
+  );
 
   return (
     <Modal
@@ -83,27 +156,35 @@ export function ChannelFormModal({
       footer={(_, { OkBtn, CancelBtn }) =>
         channel ? (
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Popconfirm
-              title={enabled ? 'Disable this channel?' : 'Enable this channel?'}
-              onConfirm={() => {
-                form.setFieldValue('enabled', !enabled);
-                onToggleEnabled(channel.id, !enabled);
-              }}
-            >
-              <Button loading={togglingEnabled}>
-                {enabled ? 'Disable' : 'Enable'}
-              </Button>
-            </Popconfirm>
+            <Space>
+              <Popconfirm
+                title={
+                  enabled ? 'Disable this channel?' : 'Enable this channel?'
+                }
+                onConfirm={() => {
+                  form.setFieldValue('enabled', !enabled);
+                  onToggleEnabled(channel.id, !enabled);
+                }}
+              >
+                <Button loading={togglingEnabled}>
+                  {enabled ? 'Disable' : 'Enable'}
+                </Button>
+              </Popconfirm>
+              {verifyButton}
+            </Space>
             <Space>
               <CancelBtn />
               <OkBtn />
             </Space>
           </div>
         ) : (
-          <>
-            <CancelBtn />
-            <OkBtn />
-          </>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            {verifyButton}
+            <Space>
+              <CancelBtn />
+              <OkBtn />
+            </Space>
+          </div>
         )
       }
     >
@@ -170,14 +251,29 @@ export function ChannelFormModal({
           </Form.Item>
         )}
 
-        {/* Edit only: a new channel has no measured scores to calibrate against yet. */}
+        {/* Edit only: tuned once a channel is running (e.g. a threshold needs measured scores). */}
         {channel && (
           <>
             <Divider />
             <Form.Item
+              name="recognitionFps"
+              label="Recognition rate (fps)"
+              rules={[
+                { required: true, message: 'Recognition rate is required' },
+              ]}
+              extra="Frames per second analyzed for faces. Higher catches people passing quickly but uses more CPU."
+            >
+              <InputNumber
+                min={0.1}
+                max={30}
+                step={1}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+            <Form.Item
               name="similarityThreshold"
               label="Similarity threshold"
-              extra="Minimum cosine similarity for a face on this channel to raise an alert. Leave blank to use the default."
+              extra="Minimum cosine similarity for a face on this channel to raise an alert. Leave blank to use the default (0.36)."
             >
               <InputNumber
                 min={0}

@@ -1,13 +1,18 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, VideoFeedSource } from '@prisma/client';
-import * as cv from '@u4/opencv4nodejs';
 import { parsePgVector } from '../common/pgvector.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaceDetectionService } from '../recognition/face-detection.service';
 import { FaceRecognitionService } from '../recognition/face-recognition.service';
 import { VideoCaptureService } from '../recognition/video-capture.service';
-import { parseVideoFeedSourceConfig, redactConfig } from './video-feed-source-config.schema';
-import { CreateVideoFeedSourceDto, UpdateVideoFeedSourceDto } from './video-feed-source.schema';
+import {
+  mergeStoredCredentials,
+  parseVideoFeedSourceConfig,
+  redactConfig,
+  RtspConfigSchema,
+  UsbConfigSchema,
+} from './video-feed-source-config.schema';
+import { CreateVideoFeedSourceDto, UpdateVideoFeedSourceDto, VerifyVideoFeedSourceDto } from './video-feed-source.schema';
 
 interface TestMatchImageRow {
   profileId: string;
@@ -64,7 +69,10 @@ export class VideoFeedSourceService {
   async update(id: string, dto: UpdateVideoFeedSourceDto) {
     const existing = await this.findRaw(id);
     const config = dto.config
-      ? parseVideoFeedSourceConfig(existing.type, dto.config)
+      ? parseVideoFeedSourceConfig(
+          existing.type,
+          mergeStoredCredentials(existing.config as Record<string, unknown>, dto.config),
+        )
       : (existing.config as Record<string, unknown>);
 
     const updated = await this.prisma.videoFeedSource.update({
@@ -75,6 +83,7 @@ export class VideoFeedSourceService {
         enabled: dto.enabled ?? existing.enabled,
         similarityThreshold:
           dto.similarityThreshold === undefined ? existing.similarityThreshold : dto.similarityThreshold,
+        recognitionFps: dto.recognitionFps ?? existing.recognitionFps,
       },
     });
     return this.serialize(updated);
@@ -90,15 +99,16 @@ export class VideoFeedSourceService {
     await this.prisma.videoFeedSource.delete({ where: { id } });
   }
 
-  async verify(id: string) {
-    const source = await this.findRaw(id);
-    const config = parseVideoFeedSourceConfig(source.type, source.config);
-    const result = this.videoCapture.captureFrame(source.type, config);
-    if (!result.reachable || !result.frame) {
-      return { reachable: false, error: result.error };
+  async verify(dto: VerifyVideoFeedSourceDto) {
+    const incoming = dto.channelId
+      ? mergeStoredCredentials((await this.findRaw(dto.channelId)).config as Record<string, unknown>, dto.config)
+      : dto.config;
+    const parsed = (dto.type === 'RTSP' ? RtspConfigSchema : UsbConfigSchema).safeParse(incoming);
+    if (!parsed.success) {
+      throw new BadRequestException('The connection details are incomplete or invalid.');
     }
-    const jpeg = cv.imencode('.jpg', result.frame);
-    return { reachable: true, previewImage: `data:image/jpeg;base64,${jpeg.toString('base64')}` };
+    const result = this.videoCapture.captureFrame(dto.type, parsed.data);
+    return result.reachable ? { reachable: true } : { reachable: false, error: result.error };
   }
 
   async testMatch(id: string) {

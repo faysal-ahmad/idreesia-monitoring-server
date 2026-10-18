@@ -30,6 +30,9 @@ model VideoFeedSource {
   removable           Boolean             @default(true)
   // null = use SFace's hardcoded reference default; set via the per-channel test-match calibration flow.
   similarityThreshold Float?
+  // How many frames per second are analyzed for faces. All frames are still read to keep the
+  // stream near-live — this only limits how many reach recognition.
+  recognitionFps      Float               @default(5)
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
@@ -84,9 +87,9 @@ model Alert {
   channelId           String
   // Deleting a channel with alert history is blocked (no cascade) to preserve the log.
   channel             VideoFeedSource   @relation(fields: [channelId], references: [id], onDelete: Restrict)
-  // The (downscaled) frame that triggered this alert, JPEG-encoded — the visual evidence an
-  // admin reviews to confirm the match themselves.
-  image               Bytes
+  // File name (<uuid>.jpg) of the downscaled frame that triggered this alert — the visual
+  // evidence an admin reviews. The JPEG itself lives on disk under ALERT_IMAGES_DIR, not in the DB.
+  imageFile           String
   // Cosine similarity between the detected face and the matched profile's embedding at alert time.
   similarityScore     Float
   // Operator's verdict on the match; null = not reviewed yet. Paired with similarityScore, this is
@@ -104,15 +107,15 @@ enum AlertReview {
   @@schema("security_server")
 }
 
-// App-wide settings — a single row (fixed id), extended with new columns as new settings are
-// added, rather than a generic key-value store, since the option set is small and well-defined.
+// App-wide settings — a generic key-value store so new settings can be added without a
+// schema migration. `value` is untyped JSON at the DB level; each key's label, default, and
+// validation live in CONFIG_DEFINITIONS (src/configuration/configuration.schema.ts).
 model Configuration {
-  id                          String  @id @default("default")
-  // How long Alert rows (and their frame images) are kept before the daily cleanup job deletes them.
-  alertsRetentionDays         Int     @default(7)
-  // Adds test profiles to the live match set, so an end-to-end test (walk past a camera, see the
-  // alert) doesn't require enrolling someone on the real watch list.
-  includeTestProfilesInAlerts Boolean @default(false)
+  key         String   @id
+  displayName String
+  value       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@schema("security_server")
 }

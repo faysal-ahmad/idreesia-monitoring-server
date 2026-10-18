@@ -26,6 +26,8 @@ services:
     env_file: ./packages/security-server/.env
     volumes:
       - .:/app
+      # Alert frame images (see ALERT_IMAGES_DIR), kept out of Postgres.
+      - alert-images:/data/alert-images
 
   security-server-ui:
     build:
@@ -45,3 +47,4 @@ services:
 
 volumes:
   postgres-dev: {}
+  alert-images: {}

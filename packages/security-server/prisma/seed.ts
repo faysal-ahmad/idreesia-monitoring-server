@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { CONFIG_DEFINITIONS } from '../src/configuration/configuration.schema';
 
 const prisma = new PrismaClient();
 
@@ -21,14 +22,18 @@ async function seedDefaultWebcam() {
   });
 }
 
-// Fixed-id singleton row — upsert is naturally idempotent, relying on the schema's own
-// column defaults (alertsRetentionDays: 7) when the row doesn't exist yet.
+// Seeds one row per known configuration key, using its registry default and display name.
+// Idempotent: existing rows (or ones with a user-set value) are left untouched.
 async function seedConfiguration() {
-  await prisma.configuration.upsert({
-    where: { id: 'default' },
-    update: {},
-    create: {},
-  });
+  await Promise.all(
+    Object.entries(CONFIG_DEFINITIONS).map(([key, definition]) =>
+      prisma.configuration.upsert({
+        where: { key },
+        update: {},
+        create: { key, displayName: definition.displayName, value: definition.default },
+      }),
+    ),
+  );
 }
 
 async function main() {

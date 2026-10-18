@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AlertEventsService } from './alert-events.service';
+import { AlertImageStorageService } from './alert-image-storage.service';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -12,18 +14,23 @@ export class AlertRetentionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configuration: ConfigurationService,
+    private readonly events: AlertEventsService,
+    private readonly images: AlertImageStorageService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async purgeExpiredAlerts() {
-    const { alertsRetentionDays } = await this.configuration.get();
+    const { alertsRetentionDays } = await this.configuration.getAll();
     const cutoff = new Date(Date.now() - alertsRetentionDays * MS_PER_DAY);
 
-    const { count } = await this.prisma.alert.deleteMany({
-      where: { timestamp: { lt: cutoff } },
-    });
+    const where = { timestamp: { lt: cutoff } };
+    // Only rows already past the cutoff match, so nothing new can slip in between these two queries.
+    const expired = await this.prisma.alert.findMany({ where, select: { imageFile: true } });
+    const { count } = await this.prisma.alert.deleteMany({ where });
+    await this.images.remove(expired.map((alert) => alert.imageFile));
 
     if (count > 0) {
+      this.events.emit({ type: 'resync' });
       this.logger.log(`Purged ${count} alert(s) older than ${alertsRetentionDays} day(s)`);
     }
   }

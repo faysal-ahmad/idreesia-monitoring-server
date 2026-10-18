@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import * as cv from '@u4/opencv4nodejs';
+import { AlertEventsService } from '../alerts/alert-events.service';
+import { AlertImageStorageService } from '../alerts/alert-image-storage.service';
 import { vectorToSql } from '../common/pgvector.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaceDetectionService } from '../recognition/face-detection.service';
@@ -28,6 +30,8 @@ export class MonitoringProfileService {
     private readonly prisma: PrismaService,
     private readonly faceDetection: FaceDetectionService,
     private readonly faceRecognition: FaceRecognitionService,
+    private readonly alertEvents: AlertEventsService,
+    private readonly alertImages: AlertImageStorageService,
   ) {}
 
   async list() {
@@ -82,8 +86,12 @@ export class MonitoringProfileService {
 
   async remove(id: string) {
     await this.ensureExists(id);
-    // Cascades to MonitoringProfileImage and Alert rows per the schema's onDelete: Cascade.
+    // Cascades to MonitoringProfileImage and Alert rows per the schema's onDelete: Cascade — the
+    // alerts' image files aren't in the DB, so they're collected first and removed afterwards.
+    const alerts = await this.prisma.alert.findMany({ where: { monitoringProfileId: id }, select: { imageFile: true } });
     await this.prisma.monitoringProfile.delete({ where: { id } });
+    await this.alertImages.remove(alerts.map((alert) => alert.imageFile));
+    this.alertEvents.emit({ type: 'resync' });
   }
 
   async addImage(profileId: string, fileBuffer: Buffer, acknowledgeWarning: boolean): Promise<ImageUploadResult> {

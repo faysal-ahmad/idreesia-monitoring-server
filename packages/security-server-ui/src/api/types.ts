@@ -20,6 +20,7 @@ export interface VideoFeedSource {
   enabled: boolean;
   removable: boolean;
   similarityThreshold: number | null;
+  recognitionFps: number;
   createdAt: string;
   updatedAt: string;
   alertCount: number;
@@ -28,7 +29,6 @@ export interface VideoFeedSource {
 export interface VerifyResult {
   reachable: boolean;
   error?: string;
-  previewImage?: string;
 }
 
 export interface TestMatchResult {
@@ -66,6 +66,8 @@ export type AlertReview = 'CORRECT' | 'FALSE_POSITIVE';
 
 export interface Alert {
   id: string;
+  // <uuid>.jpg, served from /api/alert-images/<imageFile>.
+  imageFile: string;
   timestamp: string;
   similarityScore: number;
   review: AlertReview | null;
@@ -73,8 +75,17 @@ export interface Alert {
   channel: { id: string; name: string };
 }
 
+export interface AlertPage {
+  data: Alert[];
+  total: number;
+}
+
+export interface AlertFilterOptions {
+  profiles: { id: string; name: string }[];
+  channels: { id: string; name: string }[];
+}
+
 export interface Configuration {
-  id: string;
   alertsRetentionDays: number;
   includeTestProfilesInAlerts: boolean;
 }

@@ -36,3 +36,18 @@ export function redactConfig(config: Record<string, unknown>): Record<string, un
   }
   return redacted;
 }
+
+// The edit form only ever sees redacted credentials, so it sends them back as the placeholder
+// (username) or blank ("leave blank to keep current" password). Both mean "keep the stored
+// value" — without this, saving or verifying an edited channel would wipe its credentials.
+export function mergeStoredCredentials(
+  stored: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...incoming };
+  if (merged.username === REDACTED_PLACEHOLDER) merged.username = stored.username;
+  if (merged.password == null || merged.password === '' || merged.password === REDACTED_PLACEHOLDER) {
+    merged.password = stored.password;
+  }
+  return merged;
+}

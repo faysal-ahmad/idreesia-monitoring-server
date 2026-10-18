@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Button, Divider, Empty, Image, Modal, Space, Spin, Typography } from 'antd';
 import { alertsApi } from '../api/alerts';
 import { monitoringProfilesApi } from '../api/monitoring-profiles';
-import { Alert, AlertReview } from '../api/types';
+import { Alert, AlertPage, AlertReview } from '../api/types';
 
 const { Text } = Typography;
 
@@ -23,8 +23,10 @@ export function AlertImagesModal({ alert, onClose }: AlertImagesModalProps) {
   const reviewMutation = useMutation({
     mutationFn: ({ id, review }: { id: string; review: AlertReview | null }) => alertsApi.review(id, review),
     onMutate: ({ id, review }) => {
-      queryClient.setQueryData<Alert[]>(['alerts'], (current) =>
-        current?.map((item) => (item.id === id ? { ...item, review } : item)),
+      queryClient.setQueriesData<AlertPage>(
+        { queryKey: ['alerts', 'page'] },
+        (current) =>
+          current && { ...current, data: current.data.map((item) => (item.id === id ? { ...item, review } : item)) },
       );
     },
     onError: (error) => {
@@ -32,8 +34,11 @@ export function AlertImagesModal({ alert, onClose }: AlertImagesModalProps) {
       queryClient.invalidateQueries({ queryKey: ['alerts'] });
     },
   });
+  // Closes straight away — the save is optimistic, and this component stays mounted while the
+  // dialog is closed, so a failure still surfaces as an error message.
   const setReview = (review: AlertReview | null) => {
     if (alert && alert.review !== review) reviewMutation.mutate({ id: alert.id, review });
+    onClose();
   };
 
   const { data: profile, isLoading } = useQuery({
@@ -60,7 +65,7 @@ export function AlertImagesModal({ alert, onClose }: AlertImagesModalProps) {
               {Math.round(alert.similarityScore * 100)}% confidence
             </Text>
             <Image
-              src={`/api/alerts/${alert.id}/image`}
+              src={`/api/alert-images/${alert.imageFile}`}
               preview={false}
               style={{ maxHeight: 400, objectFit: 'contain' }}
             />

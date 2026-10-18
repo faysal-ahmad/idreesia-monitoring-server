@@ -9,7 +9,7 @@ export class ConfigurationController {
 
   @Get()
   get() {
-    return this.service.get();
+    return this.service.getAll();
   }
 
   @Patch()

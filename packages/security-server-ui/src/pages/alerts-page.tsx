@@ -6,8 +6,14 @@ import {
   PlayCircleOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
 import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import {
+  Alert as AntAlert,
+  Badge,
   Button,
   Image,
   Pagination,
@@ -21,17 +27,28 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { alertsApi } from '../api/alerts';
-import { Alert } from '../api/types';
+import { Alert, AlertPage } from '../api/types';
 import { AlertImagesModal } from '../components/alert-images-modal';
 import AlertsListFilter, {
   AlertsFilter,
-  AlertsFilterOption,
   AlertsListFilterChips,
 } from '../components/alerts-list-filter';
 
-const { Text, Title } = Typography;
+const { Title } = Typography;
 
-const REFRESH_INTERVAL_MS = 3000;
+const ALERTS_STREAM_URL = '/api/alerts/stream';
+
+type StreamStatus = 'connecting' | 'live' | 'reconnecting' | 'paused';
+
+const STREAM_STATUS_BADGE: Record<
+  StreamStatus,
+  { status: 'success' | 'processing' | 'warning' | 'default'; text: string }
+> = {
+  live: { status: 'success', text: 'Live' },
+  connecting: { status: 'processing', text: 'Connecting…' },
+  reconnecting: { status: 'warning', text: 'Reconnecting…' },
+  paused: { status: 'default', text: 'Paused' },
+};
 const NEW_ALERT_FLASH_MS = 30_000;
 
 // One context for the page's lifetime. Browsers start it suspended until the user interacts
@@ -77,6 +94,8 @@ function toSearchParams(filter: AlertsFilter): URLSearchParams {
   return params;
 }
 
+// Paging and filtering happen on the server; this is only used to decide whether a live
+// alert is relevant to the current view (tone, "new alerts" notice).
 function matchesFilter(alert: Alert, filter: AlertsFilter): boolean {
   if (filter.profileId && alert.profile.id !== filter.profileId) return false;
   if (filter.channelId && alert.channel.id !== filter.channelId) return false;
@@ -84,65 +103,65 @@ function matchesFilter(alert: Alert, filter: AlertsFilter): boolean {
   return true;
 }
 
-// Filter dropdowns only offer people/channels that actually have alerts.
-function distinctOptions(
-  alerts: Alert[],
-  pick: (alert: Alert) => AlertsFilterOption,
-): AlertsFilterOption[] {
-  const byId = new Map(alerts.map((alert) => [pick(alert).id, pick(alert)]));
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function formatElapsed(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.floor(minutes / 60)}h ago`;
-}
-
 export default function AlertsPage() {
+  const queryClient = useQueryClient();
   const [isPaused, setIsPaused] = useState(false);
-  const {
-    data: alerts,
-    isLoading,
-    isFetching,
-    dataUpdatedAt,
-    refetch,
-  } = useQuery({
-    queryKey: ['alerts'],
-    queryFn: alertsApi.list,
-    refetchInterval: isPaused ? false : REFRESH_INTERVAL_MS,
-  });
-  const [now, setNow] = useState(() => Date.now());
-  // Stored by id and read from the query data, so the dialog reflects a review as soon as it's saved.
-  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
-  const selectedAlert =
-    alerts?.find((alert) => alert.id === selectedAlertId) ?? null;
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>('connecting');
+  // The initial useQuery fetch already covers the very first connection; every later (re)connect
+  // refetches to pick up anything that changed while disconnected or paused.
+  const isFirstConnectionRef = useRef(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  // Alert id -> time its row stops flashing.
-  const [flashUntil, setFlashUntil] = useState<Map<string, number>>(
-    () => new Map(),
-  );
-  // null until the first fetch, so alerts already present when the page opens don't flash.
-  const seenIdsRef = useRef<Set<string> | null>(null);
-  const [isSoundEnabled, setIsSoundEnabled] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = useMemo(() => parseFilter(searchParams), [searchParams]);
   const setFilter = (next: AlertsFilter) => {
     setSearchParams(toSearchParams(next));
     setPage(1);
   };
-  const visibleAlerts = (alerts ?? []).filter((alert) =>
-    matchesFilter(alert, filter),
-  );
+
+  const {
+    data: alertPage,
+    isLoading,
+    isFetching,
+    refetch,
+  } = useQuery({
+    queryKey: ['alerts', 'page', { page, pageSize, ...filter }],
+    queryFn: () => alertsApi.list({ page, pageSize, ...filter }),
+    // Keeps the current rows on screen while the next page/filter loads, instead of flashing empty.
+    placeholderData: keepPreviousData,
+  });
+  const { data: filterOptions } = useQuery({
+    queryKey: ['alerts', 'filter-options'],
+    queryFn: alertsApi.filterOptions,
+  });
   const filterProps = {
     filter,
     setFilter,
-    profiles: distinctOptions(alerts ?? [], (alert) => alert.profile),
-    channels: distinctOptions(alerts ?? [], (alert) => alert.channel),
+    profiles: filterOptions?.profiles ?? [],
+    channels: filterOptions?.channels ?? [],
   };
+
+  const [now, setNow] = useState(() => Date.now());
+  // A snapshot rather than an id, so the dialog stays open even if a refetch moves the alert off
+  // the current page; the on-page copy is preferred while it's there (it has the latest review).
+  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
+  const shownAlert = selectedAlert
+    ? (alertPage?.data.find((alert) => alert.id === selectedAlert.id) ??
+      selectedAlert)
+    : null;
+  // Alert id -> time its row stops flashing.
+  const [flashUntil, setFlashUntil] = useState<Map<string, number>>(
+    () => new Map(),
+  );
+  // Matching alerts that arrived while viewing page 2+, where rows are kept still on purpose.
+  const [newAlertCount, setNewAlertCount] = useState(0);
+  const [isSoundEnabled, setIsSoundEnabled] = useState(false);
+
+  // The stream handlers read these through refs so changing page/filter doesn't reconnect it.
+  const pageRef = useRef(page);
+  const filterRef = useRef(filter);
+  pageRef.current = page;
+  filterRef.current = filter;
 
   const stopFlashing = (alertId: string) =>
     setFlashUntil((previous) => {
@@ -152,37 +171,90 @@ export default function AlertsPage() {
       return next;
     });
 
-  // Ticks every second so the "updated Xs ago" label stays current.
+  // Live updates over Server-Sent Events instead of polling.
+  useEffect(() => {
+    if (isPaused) {
+      setStreamStatus('paused');
+      return;
+    }
+    const resync = () =>
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+    let refetchOnOpen = !isFirstConnectionRef.current;
+    isFirstConnectionRef.current = false;
+
+    setStreamStatus('connecting');
+    const source = new EventSource(ALERTS_STREAM_URL);
+    source.onopen = () => {
+      setStreamStatus('live');
+      if (refetchOnOpen) resync();
+      refetchOnOpen = true;
+    };
+    // EventSource reconnects on its own; this only reflects that in the UI.
+    source.onerror = () => setStreamStatus('reconnecting');
+
+    source.addEventListener('created', (event) => {
+      const { alert } = JSON.parse(event.data) as { alert: Alert };
+      const currentTime = Date.now();
+      // Flash regardless of filter/page — it only shows if the row is on screen, e.g. once the
+      // filter is cleared or the operator jumps to the latest page in time.
+      setFlashUntil((previous) => {
+        const next = new Map(
+          [...previous].filter(([, until]) => until > currentTime),
+        );
+        next.set(alert.id, currentTime + NEW_ALERT_FLASH_MS);
+        return next;
+      });
+      const relevant = matchesFilter(alert, filterRef.current);
+      if (relevant) playAlertTone();
+
+      if (pageRef.current === 1) {
+        resync();
+      } else {
+        // Keep later pages still while being read; the notice offers a jump to the latest.
+        if (relevant) setNewAlertCount((count) => count + 1);
+        queryClient.invalidateQueries({
+          queryKey: ['alerts', 'filter-options'],
+        });
+      }
+    });
+    source.addEventListener('reviewed', (event) => {
+      const { id, review } = JSON.parse(event.data) as Pick<
+        Alert,
+        'id' | 'review'
+      >;
+      queryClient.setQueriesData<AlertPage>(
+        { queryKey: ['alerts', 'page'] },
+        (current) =>
+          current && {
+            ...current,
+            data: current.data.map((alert) =>
+              alert.id === id ? { ...alert, review } : alert,
+            ),
+          },
+      );
+      setSelectedAlert((current) =>
+        current?.id === id ? { ...current, review } : current,
+      );
+    });
+    source.addEventListener('resync', resync);
+
+    return () => source.close();
+  }, [isPaused, queryClient]);
+
+  // Ticks every second so rows stop flashing on time.
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
+  // A freshly fetched page already includes everything the notice was counting.
+  useEffect(() => setNewAlertCount(0), [page, pageSize, filter]);
+
+  // A page can end up past the end (e.g. after older alerts are purged) — go to the last one.
   useEffect(() => {
-    if (!alerts) return;
-    const seenIds = seenIdsRef.current;
-    seenIdsRef.current = new Set(alerts.map((alert) => alert.id));
-    if (!seenIds) return;
-
-    const newAlerts = alerts.filter((alert) => !seenIds.has(alert.id));
-    if (newAlerts.length === 0) return;
-
-    const currentTime = Date.now();
-    setFlashUntil((previous) => {
-      const next = new Map(
-        [...previous].filter(([, until]) => until > currentTime),
-      );
-      for (const alert of newAlerts) {
-        next.set(alert.id, currentTime + NEW_ALERT_FLASH_MS);
-      }
-      return next;
-    });
-    // Alerts hidden by the filter still flash if it's cleared in time, but don't beep.
-    if (newAlerts.some((alert) => matchesFilter(alert, filter))) {
-      playAlertTone();
-    }
-    // Re-running on a filter change is harmless: seenIds already holds every alert, so nothing is new.
-  }, [alerts, filter]);
+    if (!alertPage || alertPage.data.length > 0 || page === 1) return;
+    if (alertPage.total > 0) setPage(Math.ceil(alertPage.total / pageSize));
+  }, [alertPage, page, pageSize]);
 
   // Any click or key press on the page unlocks audio; the "Enable sound" button is the explicit way.
   useEffect(() => {
@@ -220,11 +292,7 @@ export default function AlertsPage() {
                 </Button>
               </Tooltip>
             )}
-            {dataUpdatedAt > 0 && (
-              <Text type="secondary">
-                updated {formatElapsed(now - dataUpdatedAt)}
-              </Text>
-            )}
+            <Badge {...STREAM_STATUS_BADGE[streamStatus]} />
             <Button
               icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
               onClick={() => setIsPaused((paused) => !paused)}
@@ -245,6 +313,19 @@ export default function AlertsPage() {
           <AlertsListFilterChips {...filterProps} />
         </div>
       </div>
+      {newAlertCount > 0 && page !== 1 && (
+        <AntAlert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={`${newAlertCount} new alert${newAlertCount === 1 ? '' : 's'} since this page loaded.`}
+          action={
+            <Button size="small" type="primary" onClick={() => setPage(1)}>
+              Go to latest
+            </Button>
+          }
+        />
+      )}
       <div className="list-container">
         <Table
           className="list-table"
@@ -256,22 +337,19 @@ export default function AlertsPage() {
           }
           onRow={(record) => ({
             onClick: () => {
-              setSelectedAlertId(record.id);
+              setSelectedAlert(record);
               stopFlashing(record.id);
             },
             style: { cursor: 'pointer' },
           })}
           loading={isLoading}
-          dataSource={visibleAlerts.slice(
-            (page - 1) * pageSize,
-            page * pageSize,
-          )}
+          dataSource={alertPage?.data ?? []}
           pagination={false}
           footer={() => (
             <Pagination
               current={page}
               pageSize={pageSize}
-              total={visibleAlerts.length}
+              total={alertPage?.total ?? 0}
               showSizeChanger
               showTotal={(total, range) =>
                 `${range[0]}-${range[1]} of ${total} items`
@@ -287,7 +365,7 @@ export default function AlertsPage() {
               title: 'Frame',
               render: (_, record: Alert) => (
                 <Image
-                  src={`/api/alerts/${record.id}/image`}
+                  src={`/api/alert-images/${record.imageFile}`}
                   width={64}
                   height={64}
                   preview={false}
@@ -348,8 +426,8 @@ export default function AlertsPage() {
         />
       </div>
       <AlertImagesModal
-        alert={selectedAlert}
-        onClose={() => setSelectedAlertId(null)}
+        alert={shownAlert}
+        onClose={() => setSelectedAlert(null)}
       />
     </div>
   );

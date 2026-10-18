@@ -7,8 +7,8 @@ import { parseVideoFeedSourceConfig } from '../video-feed-sources/video-feed-sou
 import { AlertPipelineService } from './alert-pipeline.service';
 
 // Frames are always read (to stay near-live and drain the stream buffer), but only handed off
-// downstream every Nth frame, to cap effective FPS/CPU load for a close-up doorway feed.
-const FRAME_SKIP = 3;
+// downstream at the channel's recognitionFps, to cap CPU load. Paced by time rather than by
+// frame count so the rate doesn't depend on the camera's own frame rate.
 // Downscale factor applied to frames before handing them off downstream.
 const DOWNSCALE_FACTOR = 0.5;
 const MAX_CONSECUTIVE_FAILURES = 5;
@@ -21,7 +21,7 @@ interface ChannelLoop {
   channel: VideoFeedSource;
   stopped: boolean;
   capture?: cv.VideoCapture;
-  frameCounter: number;
+  lastProcessedAt: number;
   consecutiveFailures: number;
   openFailures: number;
   donePromise: Promise<void>;
@@ -83,7 +83,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
-      // Already running — refresh the in-memory snapshot so name/similarityThreshold changes
+      // Already running — refresh the in-memory snapshot so name/similarityThreshold/recognitionFps changes
       // take effect immediately. If the connection details themselves changed, force a
       // reconnect so the next capture open picks up the new source string.
       const configChanged = !configsEqual(existingLoop.channel.config, channel.config);
@@ -99,7 +99,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     const loop: ChannelLoop = {
       channel,
       stopped: false,
-      frameCounter: 0,
+      lastProcessedAt: 0,
       consecutiveFailures: 0,
       openFailures: 0,
       donePromise: Promise.resolve(),
@@ -172,8 +172,10 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
       }
 
       loop.consecutiveFailures = 0;
-      loop.frameCounter++;
-      if (loop.frameCounter % FRAME_SKIP === 0 && !loop.processing) {
+      const intervalMs = 1000 / loop.channel.recognitionFps;
+      const now = Date.now();
+      if (now - loop.lastProcessedAt >= intervalMs && !loop.processing) {
+        loop.lastProcessedAt = now;
         const downscaled = frame.rescale(DOWNSCALE_FACTOR);
         loop.processing = true;
         this.alertPipeline

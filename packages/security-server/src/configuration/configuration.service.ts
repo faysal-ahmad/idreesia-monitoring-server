@@ -1,29 +1,36 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { UpdateConfigurationDto } from './configuration.schema';
-
-// Fixed id — Configuration is a single-row (singleton) table, not a generic key-value store.
-const CONFIGURATION_ID = 'default';
+import { CONFIG_DEFINITIONS, ConfigKey, ConfigValues, UpdateConfigurationDto } from './configuration.schema';
 
 @Injectable()
 export class ConfigurationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Defensive upsert rather than a plain read — guarantees the row exists even if seeding
-  // was skipped (e.g. an existing DB that predates this table).
-  async get() {
-    return this.prisma.configuration.upsert({
-      where: { id: CONFIGURATION_ID },
-      update: {},
-      create: { id: CONFIGURATION_ID },
-    });
+  // Missing rows (e.g. a setting added after this DB was seeded) fall back to their
+  // registry default rather than requiring a migration or re-seed.
+  async getAll(): Promise<ConfigValues> {
+    const rows = await this.prisma.configuration.findMany();
+    const byKey = new Map(rows.map((row) => [row.key, row.value]));
+
+    return Object.fromEntries(
+      Object.entries(CONFIG_DEFINITIONS).map(([key, definition]) => [
+        key,
+        byKey.has(key) ? definition.schema.parse(byKey.get(key)) : definition.default,
+      ]),
+    ) as ConfigValues;
   }
 
-  async update(dto: UpdateConfigurationDto) {
-    return this.prisma.configuration.upsert({
-      where: { id: CONFIGURATION_ID },
-      update: dto,
-      create: { id: CONFIGURATION_ID, ...dto },
-    });
+  async update(dto: UpdateConfigurationDto): Promise<ConfigValues> {
+    await Promise.all(
+      (Object.entries(dto) as [ConfigKey, ConfigValues[ConfigKey]][]).map(([key, value]) =>
+        this.prisma.configuration.upsert({
+          where: { key },
+          update: { value: value as Prisma.InputJsonValue },
+          create: { key, displayName: CONFIG_DEFINITIONS[key].displayName, value: value as Prisma.InputJsonValue },
+        }),
+      ),
+    );
+    return this.getAll();
   }
 }
