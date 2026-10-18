@@ -63,3 +63,29 @@
 .list-actions-icon:last-child {
   padding-right: 0;
 }
+
+.alert-row-new > td {
+  animation: alert-row-flash 1s ease-in-out infinite;
+}
+
+/* The shared hover background is !important and would otherwise hide the flash. */
+.list-table .ant-table-tbody > tr.alert-row-new:hover > td {
+  background: #ffccc7 !important;
+}
+
+@keyframes alert-row-flash {
+  0%,
+  100% {
+    background-color: #fff1f0;
+  }
+  50% {
+    background-color: #ff7875;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-row-new > td {
+    animation: none;
+    background-color: #ffccc7;
+  }
+}

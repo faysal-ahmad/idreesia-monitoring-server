@@ -38,7 +38,11 @@ export function AlertImagesModal({ alert, onClose }: AlertImagesModalProps) {
               {alert.channel.name} · {new Date(alert.timestamp).toLocaleString()} ·{' '}
               {Math.round(alert.similarityScore * 100)}% confidence
             </Text>
-            <Image src={`/api/alerts/${alert.id}/image`} style={{ maxHeight: 400, objectFit: 'contain' }} />
+            <Image
+              src={`/api/alerts/${alert.id}/image`}
+              preview={false}
+              style={{ maxHeight: 400, objectFit: 'contain' }}
+            />
           </Space>
 
           <Divider />
@@ -47,19 +51,18 @@ export function AlertImagesModal({ alert, onClose }: AlertImagesModalProps) {
             <Text strong>Profile photos — {alert.profile.name}</Text>
             {isLoading && <Spin />}
             {profile?.images.length === 0 && <Empty description="This profile has no photos" />}
-            <Image.PreviewGroup>
-              <Space wrap>
-                {profile?.images.map((image) => (
-                  <Image
-                    key={image.id}
-                    src={image.previewImage}
-                    width={140}
-                    height={140}
-                    style={{ objectFit: 'cover' }}
-                  />
-                ))}
-              </Space>
-            </Image.PreviewGroup>
+            <Space wrap>
+              {profile?.images.map((image) => (
+                <Image
+                  key={image.id}
+                  src={image.previewImage}
+                  preview={false}
+                  width={140}
+                  height={140}
+                  style={{ objectFit: 'cover' }}
+                />
+              ))}
+            </Space>
           </Space>
         </>
       )}
