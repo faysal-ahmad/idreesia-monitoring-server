@@ -40,6 +40,9 @@ WORKDIR /app
 # multiarch triplet dir, e.g. /usr/lib/aarch64-linux-gnu) — resolved at
 # container start via gcc rather than hardcoded, so this image works on both
 # amd64 and arm64 hosts.
+#
+# serve hot-reloads without the Nx daemon (disabled above): webpack --watch rebuilds
+# dist/main.js on source changes and node --watch restarts the server when it changes.
 CMD export OPENCV_LIB_DIR="/usr/lib/$(gcc -print-multiarch)" && \
   yarn install && \
   yarn nx run @idreesia/security-server:prisma-generate && \

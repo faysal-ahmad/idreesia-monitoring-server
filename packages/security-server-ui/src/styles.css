@@ -89,3 +89,33 @@
     background-color: #ffccc7;
   }
 }
+
+.list-table-header {
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+  gap: 12px;
+}
+
+.list-table-header-utilities {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+  max-width: 65%;
+  margin-left: auto;
+}
+
+.list-filter-chips {
+  width: 100%;
+}
+
+.list-filter-panel,
+.list-filter-panel form {
+  width: 640px !important;
+  max-width: 640px;
+  overflow: visible;
+}

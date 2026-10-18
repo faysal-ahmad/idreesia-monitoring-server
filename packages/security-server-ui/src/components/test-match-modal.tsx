@@ -25,7 +25,8 @@ export function TestMatchModal({ open, channel, onClose, onThresholdSaved }: Tes
     try {
       const res = await videoFeedSourcesApi.testMatch(channel.id);
       setResult(res);
-      setThreshold(res.currentSimilarityThreshold ?? Number(res.results[0]?.score.toFixed(2)) ?? null);
+      const topScore = res.results[0]?.score;
+      setThreshold(res.currentSimilarityThreshold ?? (topScore !== undefined ? Number(topScore.toFixed(2)) : null));
     } catch (error) {
       message.error(error instanceof Error ? error.message : 'Test match failed');
     } finally {
@@ -57,7 +58,7 @@ export function TestMatchModal({ open, channel, onClose, onThresholdSaved }: Tes
     <Modal title={`Test Match — ${channel?.name ?? ''}`} open={open} onCancel={handleClose} footer={null} destroyOnHidden>
       <Paragraph type="secondary">
         Point this channel at someone enrolled as a <Text strong>test profile</Text>, then capture a frame to see the
-        computed similarity score. This never compares against real watch-list profiles or triggers an alert.
+        computed similarity score. This does not trigger an alert.
       </Paragraph>
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
         <Button type="primary" loading={running} onClick={runCapture}>

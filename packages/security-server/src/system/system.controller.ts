@@ -3,7 +3,7 @@ import { FaceMatchCacheService } from '../ingestion/face-match-cache.service';
 import { VideoIngestionService } from '../ingestion/video-ingestion.service';
 
 // The server never polls the database on its own schedule — every mutation (channels,
-// monitoring profiles, profile images) happens through the UI, which calls this endpoint
+// monitoring profiles, profile images, configuration) happens through the UI, which calls this endpoint
 // right after a change to tell the server to pick up the fresh state.
 @Controller('system')
 export class SystemController {

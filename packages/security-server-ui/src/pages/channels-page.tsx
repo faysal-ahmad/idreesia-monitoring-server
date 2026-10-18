@@ -99,7 +99,9 @@ export default function ChannelsPage() {
       input,
     }: {
       id: string;
-      input: ReturnType<typeof toApiInput>;
+      input: ReturnType<typeof toApiInput> & {
+        similarityThreshold: number | null;
+      };
     }) => videoFeedSourcesApi.update(id, input),
     onSuccess: () => {
       message.success('Channel updated');
@@ -155,7 +157,14 @@ export default function ChannelsPage() {
   const handleSubmit = (values: ChannelFormValues) => {
     const input = toApiInput(values);
     if (editingChannel) {
-      updateMutation.mutate({ id: editingChannel.id, input });
+      updateMutation.mutate({
+        id: editingChannel.id,
+        // A cleared field comes back as null, which resets the channel to the default threshold.
+        input: {
+          ...input,
+          similarityThreshold: values.similarityThreshold ?? null,
+        },
+      });
     } else {
       createMutation.mutate(input);
     }

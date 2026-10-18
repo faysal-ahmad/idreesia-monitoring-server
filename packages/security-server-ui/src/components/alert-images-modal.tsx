@@ -1,7 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
-import { Divider, Empty, Image, Modal, Space, Spin, Typography } from 'antd';
+import { CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { App, Button, Divider, Empty, Image, Modal, Space, Spin, Typography } from 'antd';
+import { alertsApi } from '../api/alerts';
 import { monitoringProfilesApi } from '../api/monitoring-profiles';
-import { Alert } from '../api/types';
+import { Alert, AlertReview } from '../api/types';
 
 const { Text } = Typography;
 
@@ -11,9 +13,28 @@ interface AlertImagesModalProps {
 }
 
 // Shows the captured frame above all of the matched profile's saved photos so an admin can
-// compare them.
+// compare them, and record whether the match was correct.
 export function AlertImagesModal({ alert, onClose }: AlertImagesModalProps) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
   const profileId = alert?.profile.id ?? null;
+
+  // Optimistic, so the selected button updates immediately rather than on the alerts page's next poll.
+  const reviewMutation = useMutation({
+    mutationFn: ({ id, review }: { id: string; review: AlertReview | null }) => alertsApi.review(id, review),
+    onMutate: ({ id, review }) => {
+      queryClient.setQueryData<Alert[]>(['alerts'], (current) =>
+        current?.map((item) => (item.id === id ? { ...item, review } : item)),
+      );
+    },
+    onError: (error) => {
+      message.error(error instanceof Error ? error.message : 'Failed to save review');
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+    },
+  });
+  const setReview = (review: AlertReview | null) => {
+    if (alert && alert.review !== review) reviewMutation.mutate({ id: alert.id, review });
+  };
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['monitoring-profiles', profileId],
@@ -62,6 +83,37 @@ export function AlertImagesModal({ alert, onClose }: AlertImagesModalProps) {
                   style={{ objectFit: 'cover' }}
                 />
               ))}
+            </Space>
+          </Space>
+
+          <Divider />
+
+          <Space size="middle" wrap align="center">
+            <Text strong>Is this the same person?</Text>
+            <Space size="middle" wrap>
+              <Button
+                size="large"
+                color="green"
+                variant={alert.review === 'CORRECT' ? 'solid' : 'outlined'}
+                icon={<CheckCircleOutlined />}
+                onClick={() => setReview('CORRECT')}
+              >
+                {alert.review === 'CORRECT' ? 'Marked correct' : 'Correct match'}
+              </Button>
+              <Button
+                size="large"
+                color="danger"
+                variant={alert.review === 'FALSE_POSITIVE' ? 'solid' : 'outlined'}
+                icon={<CloseCircleOutlined />}
+                onClick={() => setReview('FALSE_POSITIVE')}
+              >
+                {alert.review === 'FALSE_POSITIVE' ? 'Marked false positive' : 'False positive'}
+              </Button>
+              {alert.review && (
+                <Button type="link" onClick={() => setReview(null)}>
+                  Clear review
+                </Button>
+              )}
             </Space>
           </Space>
         </>

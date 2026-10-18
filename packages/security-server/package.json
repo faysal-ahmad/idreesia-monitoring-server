@@ -57,21 +57,12 @@
       },
       "serve": {
         "continuous": true,
-        "executor": "@nx/js:node",
-        "defaultConfiguration": "development",
-        "dependsOn": [
-          "build"
-        ],
+        "executor": "nx:run-commands",
         "options": {
-          "buildTarget": "@idreesia/security-server:build",
-          "runBuildTargetDependencies": false
-        },
-        "configurations": {
-          "development": {
-            "buildTarget": "@idreesia/security-server:build:development"
-          },
-          "production": {
-            "buildTarget": "@idreesia/security-server:build:production"
+          "command": "rm -f dist/main.js && (webpack-cli build --watch & while [ ! -f dist/main.js ]; do sleep 1; done; node --watch --enable-source-maps dist/main.js)",
+          "cwd": "packages/security-server",
+          "env": {
+            "NODE_ENV": "development"
           }
         }
       },

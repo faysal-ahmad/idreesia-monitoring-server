@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReviewAlertDto } from './alert.schema';
 
 @Injectable()
 export class AlertService {
@@ -13,7 +14,8 @@ export class AlertService {
         id: true,
         timestamp: true,
         similarityScore: true,
-        monitoringProfile: { select: { id: true, name: true } },
+        review: true,
+        monitoringProfile: { select: { id: true, name: true, isTest: true } },
         channel: { select: { id: true, name: true } },
       },
       orderBy: { timestamp: 'desc' },
@@ -22,9 +24,18 @@ export class AlertService {
       id: alert.id,
       timestamp: alert.timestamp,
       similarityScore: alert.similarityScore,
+      review: alert.review,
       profile: alert.monitoringProfile,
       channel: alert.channel,
     }));
+  }
+
+  async review(id: string, dto: ReviewAlertDto) {
+    const { count } = await this.prisma.alert.updateMany({
+      where: { id },
+      data: { review: dto.review, reviewedAt: dto.review ? new Date() : null },
+    });
+    if (count === 0) throw new NotFoundException('Alert not found.');
   }
 
   async getImage(id: string): Promise<Buffer> {

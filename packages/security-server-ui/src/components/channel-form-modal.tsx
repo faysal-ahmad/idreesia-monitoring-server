@@ -1,5 +1,6 @@
 import {
   Button,
+  Divider,
   Form,
   Input,
   InputNumber,
@@ -21,6 +22,7 @@ export interface ChannelFormValues {
   username?: string;
   password?: string;
   deviceIndex?: string;
+  similarityThreshold?: number | null;
 }
 
 interface ChannelFormModalProps {
@@ -61,6 +63,7 @@ export function ChannelFormModal({
           channel.config.deviceIndex !== undefined
             ? String(channel.config.deviceIndex)
             : undefined,
+        similarityThreshold: channel.similarityThreshold,
       });
     } else {
       form.resetFields();
@@ -165,6 +168,26 @@ export function ChannelFormModal({
           >
             <Input placeholder="0" />
           </Form.Item>
+        )}
+
+        {/* Edit only: a new channel has no measured scores to calibrate against yet. */}
+        {channel && (
+          <>
+            <Divider />
+            <Form.Item
+              name="similarityThreshold"
+              label="Similarity threshold"
+              extra="Minimum cosine similarity for a face on this channel to raise an alert. Leave blank to use the default."
+            >
+              <InputNumber
+                min={0}
+                max={1}
+                step={0.01}
+                placeholder="Default"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </>
         )}
       </Form>
     </Modal>

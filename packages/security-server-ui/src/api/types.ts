@@ -62,15 +62,19 @@ export type ImageUploadResult =
   | { status: 'warning'; reason: string; faceBox: { width: number; height: number }; confidence: number }
   | { status: 'created'; image: { id: string; createdAt: string } };
 
+export type AlertReview = 'CORRECT' | 'FALSE_POSITIVE';
+
 export interface Alert {
   id: string;
   timestamp: string;
   similarityScore: number;
-  profile: { id: string; name: string };
+  review: AlertReview | null;
+  profile: { id: string; name: string; isTest: boolean };
   channel: { id: string; name: string };
 }
 
 export interface Configuration {
   id: string;
   alertsRetentionDays: number;
+  includeTestProfilesInAlerts: boolean;
 }

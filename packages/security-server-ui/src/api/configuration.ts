@@ -2,7 +2,8 @@ import { api } from './client';
 import { Configuration } from './types';
 
 export interface UpdateConfigurationInput {
-  alertsRetentionDays: number;
+  alertsRetentionDays?: number;
+  includeTestProfilesInAlerts?: boolean;
 }
 
 export const configurationApi = {

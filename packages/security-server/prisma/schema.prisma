@@ -38,8 +38,9 @@ model VideoFeedSource {
   @@schema("security_server")
 }
 
-// A watch-list person. isTest separates calibration profiles (excluded from
-// the live alert pipeline's match set) from real monitoring profiles.
+// A watch-list person. isTest separates calibration profiles from real monitoring profiles;
+// test profiles are excluded from the live alert pipeline's match set unless
+// Configuration.includeTestProfilesInAlerts is on.
 model MonitoringProfile {
   id        String   @id @default(cuid())
   name      String
@@ -88,6 +89,17 @@ model Alert {
   image               Bytes
   // Cosine similarity between the detected face and the matched profile's embedding at alert time.
   similarityScore     Float
+  // Operator's verdict on the match; null = not reviewed yet. Paired with similarityScore, this is
+  // the ground truth for calibrating channel similarity thresholds.
+  review              AlertReview?
+  reviewedAt          DateTime?
+
+  @@schema("security_server")
+}
+
+enum AlertReview {
+  CORRECT
+  FALSE_POSITIVE
 
   @@schema("security_server")
 }
@@ -95,9 +107,12 @@ model Alert {
 // App-wide settings — a single row (fixed id), extended with new columns as new settings are
 // added, rather than a generic key-value store, since the option set is small and well-defined.
 model Configuration {
-  id                  String @id @default("default")
+  id                          String  @id @default("default")
   // How long Alert rows (and their frame images) are kept before the daily cleanup job deletes them.
-  alertsRetentionDays Int    @default(7)
+  alertsRetentionDays         Int     @default(7)
+  // Adds test profiles to the live match set, so an end-to-end test (walk past a camera, see the
+  // alert) doesn't require enrolling someone on the real watch list.
+  includeTestProfilesInAlerts Boolean @default(false)
 
   @@schema("security_server")
 }

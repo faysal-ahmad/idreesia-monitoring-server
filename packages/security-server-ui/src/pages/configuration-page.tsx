@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, Form, InputNumber, Typography } from 'antd';
+import { App, Button, Form, InputNumber, Switch, Typography } from 'antd';
 import { useEffect } from 'react';
 import { configurationApi } from '../api/configuration';
 
-const { Title, Paragraph } = Typography;
+const { Title } = Typography;
 
 interface ConfigurationFormValues {
   alertsRetentionDays: number;
+  includeTestProfilesInAlerts: boolean;
 }
 
 export default function ConfigurationPage() {
@@ -23,6 +24,7 @@ export default function ConfigurationPage() {
     if (configuration) {
       form.setFieldsValue({
         alertsRetentionDays: configuration.alertsRetentionDays,
+        includeTestProfilesInAlerts: configuration.includeTestProfilesInAlerts,
       });
     }
   }, [configuration, form]);
@@ -42,10 +44,6 @@ export default function ConfigurationPage() {
   return (
     <div>
       <Title level={3}>Configuration</Title>
-      <Paragraph type="secondary">
-        A daily job deletes alerts (and their frame images) older than this many
-        days.
-      </Paragraph>
       <Form
         form={form}
         layout="horizontal"
@@ -59,8 +57,17 @@ export default function ConfigurationPage() {
           name="alertsRetentionDays"
           label="Alerts Retention (days)"
           rules={[{ required: true, message: 'Retention period is required' }]}
+          extra="A daily job deletes alerts (and their frame images) older than this many days."
         >
           <InputNumber min={1} style={{ width: '100%' }} />
+        </Form.Item>
+        <Form.Item
+          name="includeTestProfilesInAlerts"
+          label="Include Test Profiles in Alerts"
+          valuePropName="checked"
+          extra="When on, test profiles are matched by the live cameras and raise alerts like real profiles. Their alerts are tagged as tests."
+        >
+          <Switch />
         </Form.Item>
         <Form.Item wrapperCol={{ offset: 10, span: 14 }}>
           <Button

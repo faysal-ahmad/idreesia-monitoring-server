@@ -53,7 +53,7 @@ export function ProfileFormModal({
           name="isTest"
           label="Test profile"
           valuePropName="checked"
-          extra="Test profiles are only used for channel calibration and never trigger real alerts."
+          extra="Test profiles are used for channel calibration. They only trigger alerts when 'Include test profiles in alerts' is on in Configuration."
         >
           <Switch />
         </Form.Item>

@@ -9,14 +9,19 @@ export class ApiError extends Error {
   }
 }
 
-// The server never polls the database on its own schedule for channel/profile/image changes —
+// The server never polls the database on its own schedule for channel/profile/image/config changes —
 // it expects the UI to say when something it needs to reload has changed. Rather than remembering
 // to call /system/reload from every mutation's call site, every non-GET request to a
 // reload-relevant path triggers it here, once, right after the mutation succeeds.
 function isReloadRelevant(method: string, path: string): boolean {
   if (method === 'GET' || path === '/system/reload') return false;
   if (path.endsWith('/verify') || path.endsWith('/test-match')) return false;
-  return path.startsWith('/video-feed-sources') || path.startsWith('/monitoring-profiles');
+  return (
+    path.startsWith('/video-feed-sources') ||
+    path.startsWith('/monitoring-profiles') ||
+    // includeTestProfilesInAlerts changes which profiles are in the live match set.
+    path.startsWith('/configuration')
+  );
 }
 
 async function triggerReload() {

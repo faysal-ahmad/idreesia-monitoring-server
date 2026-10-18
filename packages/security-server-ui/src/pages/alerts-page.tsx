@@ -1,4 +1,6 @@
 import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
   MutedOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
@@ -12,13 +14,20 @@ import {
   Progress,
   Space,
   Table,
+  Tag,
   Tooltip,
   Typography,
 } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { alertsApi } from '../api/alerts';
 import { Alert } from '../api/types';
 import { AlertImagesModal } from '../components/alert-images-modal';
+import AlertsListFilter, {
+  AlertsFilter,
+  AlertsFilterOption,
+  AlertsListFilterChips,
+} from '../components/alerts-list-filter';
 
 const { Text, Title } = Typography;
 
@@ -51,6 +60,39 @@ function playAlertTone() {
   oscillator.stop(start + 0.6);
 }
 
+// Filters live in the URL query string, so a filtered view survives a reload and can be shared.
+function parseFilter(params: URLSearchParams): AlertsFilter {
+  return {
+    profileId: params.get('profileId') ?? undefined,
+    channelId: params.get('channelId') ?? undefined,
+    hideTestProfiles: params.get('hideTestProfiles') === 'true',
+  };
+}
+
+function toSearchParams(filter: AlertsFilter): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filter.profileId) params.set('profileId', filter.profileId);
+  if (filter.channelId) params.set('channelId', filter.channelId);
+  if (filter.hideTestProfiles) params.set('hideTestProfiles', 'true');
+  return params;
+}
+
+function matchesFilter(alert: Alert, filter: AlertsFilter): boolean {
+  if (filter.profileId && alert.profile.id !== filter.profileId) return false;
+  if (filter.channelId && alert.channel.id !== filter.channelId) return false;
+  if (filter.hideTestProfiles && alert.profile.isTest) return false;
+  return true;
+}
+
+// Filter dropdowns only offer people/channels that actually have alerts.
+function distinctOptions(
+  alerts: Alert[],
+  pick: (alert: Alert) => AlertsFilterOption,
+): AlertsFilterOption[] {
+  const byId = new Map(alerts.map((alert) => [pick(alert).id, pick(alert)]));
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function formatElapsed(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
   if (seconds < 60) return `${seconds}s ago`;
@@ -73,7 +115,10 @@ export default function AlertsPage() {
     refetchInterval: isPaused ? false : REFRESH_INTERVAL_MS,
   });
   const [now, setNow] = useState(() => Date.now());
-  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
+  // Stored by id and read from the query data, so the dialog reflects a review as soon as it's saved.
+  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
+  const selectedAlert =
+    alerts?.find((alert) => alert.id === selectedAlertId) ?? null;
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   // Alert id -> time its row stops flashing.
@@ -83,6 +128,29 @@ export default function AlertsPage() {
   // null until the first fetch, so alerts already present when the page opens don't flash.
   const seenIdsRef = useRef<Set<string> | null>(null);
   const [isSoundEnabled, setIsSoundEnabled] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filter = useMemo(() => parseFilter(searchParams), [searchParams]);
+  const setFilter = (next: AlertsFilter) => {
+    setSearchParams(toSearchParams(next));
+    setPage(1);
+  };
+  const visibleAlerts = (alerts ?? []).filter((alert) =>
+    matchesFilter(alert, filter),
+  );
+  const filterProps = {
+    filter,
+    setFilter,
+    profiles: distinctOptions(alerts ?? [], (alert) => alert.profile),
+    channels: distinctOptions(alerts ?? [], (alert) => alert.channel),
+  };
+
+  const stopFlashing = (alertId: string) =>
+    setFlashUntil((previous) => {
+      if (!previous.has(alertId)) return previous;
+      const next = new Map(previous);
+      next.delete(alertId);
+      return next;
+    });
 
   // Ticks every second so the "updated Xs ago" label stays current.
   useEffect(() => {
@@ -109,8 +177,12 @@ export default function AlertsPage() {
       }
       return next;
     });
-    playAlertTone();
-  }, [alerts]);
+    // Alerts hidden by the filter still flash if it's cleared in time, but don't beep.
+    if (newAlerts.some((alert) => matchesFilter(alert, filter))) {
+      playAlertTone();
+    }
+    // Re-running on a filter change is harmless: seenIds already holds every alert, so nothing is new.
+  }, [alerts, filter]);
 
   // Any click or key press on the page unlocks audio; the "Enable sound" button is the explicit way.
   useEffect(() => {
@@ -132,49 +204,47 @@ export default function AlertsPage() {
 
   return (
     <div>
-      <Space
-        style={{
-          marginBottom: 16,
-          display: 'flex',
-          justifyContent: 'space-between',
-        }}
-      >
+      <div className="list-table-header" style={{ marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>
           Alerts
         </Title>
-        <Space>
-          {!isSoundEnabled && (
-            <Tooltip title="The browser blocks sound until you interact with the page">
-              <Button
-                icon={<MutedOutlined />}
-                onClick={() => getAudioContext().resume()}
-              >
-                Enable sound
-              </Button>
-            </Tooltip>
-          )}
-          {dataUpdatedAt > 0 && (
-            <Text type="secondary">
-              updated {formatElapsed(now - dataUpdatedAt)}
-            </Text>
-          )}
-          <Button
-            icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
-            onClick={() => setIsPaused((paused) => !paused)}
-          >
-            {isPaused ? 'Resume' : 'Pause'}
-          </Button>
-          {isPaused && (
-            <Tooltip title="Refresh">
-              <Button
-                icon={<ReloadOutlined />}
-                loading={isFetching}
-                onClick={() => refetch()}
-              />
-            </Tooltip>
-          )}
-        </Space>
-      </Space>
+        <div className="list-table-header-utilities">
+          <Space size={8}>
+            {!isSoundEnabled && (
+              <Tooltip title="The browser blocks sound until you interact with the page">
+                <Button
+                  icon={<MutedOutlined />}
+                  onClick={() => getAudioContext().resume()}
+                >
+                  Enable sound
+                </Button>
+              </Tooltip>
+            )}
+            {dataUpdatedAt > 0 && (
+              <Text type="secondary">
+                updated {formatElapsed(now - dataUpdatedAt)}
+              </Text>
+            )}
+            <Button
+              icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+              onClick={() => setIsPaused((paused) => !paused)}
+            >
+              {isPaused ? 'Resume' : 'Pause'}
+            </Button>
+            <AlertsListFilter {...filterProps} />
+            {isPaused && (
+              <Tooltip title="Refresh">
+                <Button
+                  icon={<ReloadOutlined />}
+                  loading={isFetching}
+                  onClick={() => refetch()}
+                />
+              </Tooltip>
+            )}
+          </Space>
+          <AlertsListFilterChips {...filterProps} />
+        </div>
+      </div>
       <div className="list-container">
         <Table
           className="list-table"
@@ -186,18 +256,13 @@ export default function AlertsPage() {
           }
           onRow={(record) => ({
             onClick: () => {
-              setSelectedAlert(record);
-              setFlashUntil((previous) => {
-                if (!previous.has(record.id)) return previous;
-                const next = new Map(previous);
-                next.delete(record.id);
-                return next;
-              });
+              setSelectedAlertId(record.id);
+              stopFlashing(record.id);
             },
             style: { cursor: 'pointer' },
           })}
           loading={isLoading}
-          dataSource={(alerts ?? []).slice(
+          dataSource={visibleAlerts.slice(
             (page - 1) * pageSize,
             page * pageSize,
           )}
@@ -206,7 +271,7 @@ export default function AlertsPage() {
             <Pagination
               current={page}
               pageSize={pageSize}
-              total={alerts?.length ?? 0}
+              total={visibleAlerts.length}
               showSizeChanger
               showTotal={(total, range) =>
                 `${range[0]}-${range[1]} of ${total} items`
@@ -230,7 +295,22 @@ export default function AlertsPage() {
                 />
               ),
             },
-            { title: 'Monitored Person', dataIndex: ['profile', 'name'] },
+            {
+              title: 'Monitored Person',
+              render: (_, record: Alert) => (
+                <>
+                  <div>{record.profile.name}</div>
+                  {record.profile.isTest && (
+                    <Tag
+                      color="purple"
+                      style={{ marginTop: 4, borderRadius: 999, fontSize: 11 }}
+                    >
+                      Test profile
+                    </Tag>
+                  )}
+                </>
+              ),
+            },
             { title: 'Channel', dataIndex: ['channel', 'name'] },
             {
               title: 'Confidence',
@@ -249,13 +329,27 @@ export default function AlertsPage() {
               render: (timestamp: string) =>
                 new Date(timestamp).toLocaleString(),
             },
+            {
+              title: 'Review',
+              dataIndex: 'review',
+              render: (review: Alert['review']) =>
+                review === 'CORRECT' ? (
+                  <Tag color="success" icon={<CheckCircleOutlined />}>
+                    Correct
+                  </Tag>
+                ) : review === 'FALSE_POSITIVE' ? (
+                  <Tag color="error" icon={<CloseCircleOutlined />}>
+                    False positive
+                  </Tag>
+                ) : null,
+            },
           ]}
           locale={{ emptyText: 'No alerts yet.' }}
         />
       </div>
       <AlertImagesModal
         alert={selectedAlert}
-        onClose={() => setSelectedAlert(null)}
+        onClose={() => setSelectedAlertId(null)}
       />
     </div>
   );
