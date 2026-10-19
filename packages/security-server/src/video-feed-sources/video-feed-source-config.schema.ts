@@ -10,18 +10,10 @@ export const RtspConfigSchema = z.object({
   password: z.string().optional(),
 });
 
-// Accepts either a numeric device index or a device path (e.g. "/dev/video0") —
-// whichever the host/OS exposes for a given USB camera.
-export const UsbConfigSchema = z.object({
-  deviceIndex: z.union([z.number().int().min(0), z.string().min(1)]),
-});
-
 export type RtspConfig = z.infer<typeof RtspConfigSchema>;
-export type UsbConfig = z.infer<typeof UsbConfigSchema>;
-export type VideoFeedSourceConfig = RtspConfig | UsbConfig;
 
-export function parseVideoFeedSourceConfig(type: 'RTSP' | 'USB', config: unknown): VideoFeedSourceConfig {
-  return type === 'RTSP' ? RtspConfigSchema.parse(config) : UsbConfigSchema.parse(config);
+export function parseRtspConfig(config: unknown): RtspConfig {
+  return RtspConfigSchema.parse(config);
 }
 
 const REDACTED_KEYS = ['username', 'password'];

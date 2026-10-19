@@ -3,6 +3,7 @@ import {
   ExperimentOutlined,
   PlusOutlined,
   ReloadOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -12,7 +13,6 @@ import {
   Popconfirm,
   Space,
   Table,
-  Tag,
   Tooltip,
   Typography,
 } from 'antd';
@@ -22,6 +22,7 @@ import {
   ChannelFormValues,
   toApiInput,
 } from '../components/channel-form-modal';
+import { LiveFeedModal } from '../components/live-feed';
 import { TestMatchModal } from '../components/test-match-modal';
 import { videoFeedSourcesApi } from '../api/video-feed-sources';
 import { VideoFeedSource } from '../api/types';
@@ -35,6 +36,7 @@ export default function ChannelsPage() {
   const [editingChannel, setEditingChannel] = useState<VideoFeedSource | null>(
     null,
   );
+  const [liveChannel, setLiveChannel] = useState<VideoFeedSource | null>(null);
   const [testMatchChannel, setTestMatchChannel] =
     useState<VideoFeedSource | null>(null);
   const [page, setPage] = useState(1);
@@ -206,7 +208,6 @@ export default function ChannelsPage() {
                 </Link>
               ),
             },
-            { title: 'Type', dataIndex: 'type', render: (t) => <Tag>{t}</Tag> },
             {
               title: 'Enabled',
               dataIndex: 'enabled',
@@ -224,10 +225,15 @@ export default function ChannelsPage() {
               width: 120,
               align: 'right' as const,
               render: (_, record: VideoFeedSource) => {
-                const deleteDisabled =
-                  !record.removable || record.alertCount > 0;
+                const deleteDisabled = record.alertCount > 0;
                 return (
                   <div className="list-actions-column">
+                    <Tooltip title="Live view">
+                      <VideoCameraOutlined
+                        className="list-actions-icon"
+                        onClick={() => setLiveChannel(record)}
+                      />
+                    </Tooltip>
                     <Tooltip title="Test Match">
                       <ExperimentOutlined
                         className="list-actions-icon"
@@ -236,11 +242,9 @@ export default function ChannelsPage() {
                     </Tooltip>
                     <Tooltip
                       title={
-                        !record.removable
-                          ? 'This channel cannot be removed.'
-                          : record.alertCount > 0
-                            ? 'This channel has alert history and cannot be deleted.'
-                            : 'Delete'
+                        deleteDisabled
+                          ? 'This channel has alert history and cannot be deleted.'
+                          : 'Delete'
                       }
                     >
                       <Popconfirm
@@ -282,6 +286,11 @@ export default function ChannelsPage() {
         onToggleEnabled={(id, enabled) =>
           toggleEnabledMutation.mutate({ id, enabled })
         }
+      />
+
+      <LiveFeedModal
+        channel={liveChannel}
+        onClose={() => setLiveChannel(null)}
       />
 
       <TestMatchModal

@@ -1,16 +1,15 @@
 import { api } from './client';
-import { RtspConfig, TestMatchResult, UsbConfig, VerifyResult, VideoFeedSource, VideoFeedSourceType } from './types';
+import { RtspConfig, TestMatchResult, VerifyResult, VideoFeedSource } from './types';
 
 export interface CreateVideoFeedSourceInput {
   name: string;
-  type: VideoFeedSourceType;
-  config: RtspConfig | UsbConfig;
+  config: RtspConfig;
   enabled?: boolean;
 }
 
 export interface UpdateVideoFeedSourceInput {
   name?: string;
-  config?: Partial<RtspConfig> & Partial<UsbConfig>;
+  config?: Partial<RtspConfig>;
   enabled?: boolean;
   similarityThreshold?: number | null;
   recognitionFps?: number;
@@ -18,8 +17,7 @@ export interface UpdateVideoFeedSourceInput {
 
 // channelId (when editing) lets blank/redacted credentials fall back to the stored ones.
 export interface VerifyVideoFeedSourceInput {
-  type: VideoFeedSourceType;
-  config: RtspConfig | UsbConfig;
+  config: RtspConfig;
   channelId?: string;
 }
 

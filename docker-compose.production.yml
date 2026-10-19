@@ -15,6 +15,22 @@ services:
       timeout: 5s
       retries: 20
 
+  # Media server: the only client of each camera. The security server registers one stream per
+  # enabled channel through its API and reads the re-streams; browsers watch them via the UI proxy.
+  # Settings are passed inline; /config/go2rtc.yaml is go2rtc's own writable file inside this
+  # container (where it saves API-added streams) — deliberately not in the repo, since stream
+  # sources carry camera credentials. The DB stays the source of truth (see MediaServerService).
+  go2rtc:
+    image: alexxit/go2rtc:1.9.14
+    restart: unless-stopped
+    command:
+      - go2rtc
+      - -config
+      - /config/go2rtc.yaml
+      - -config
+      - '{"api":{"listen":":1984"},"rtsp":{"listen":":8554"},"webrtc":{"listen":""}}'
+    # No published ports: only the security server and the UI's nginx (same network) reach it.
+
   security-server-ui:
     build:
       context: .
@@ -32,6 +48,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      go2rtc:
+        condition: service_started
     restart: unless-stopped
     env_file: ./packages/security-server/.env
     volumes:

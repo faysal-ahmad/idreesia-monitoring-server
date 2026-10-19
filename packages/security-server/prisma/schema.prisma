@@ -10,24 +10,13 @@ datasource db {
   schemas    = ["security_server"]
 }
 
-enum VideoFeedSourceType {
-  RTSP
-  USB
-
-  @@schema("security_server")
-}
-
-// A configured camera ("channel") the recognition engine reads frames from.
-// Type-specific connection details (RTSP host/credentials, USB device index/path)
-// live in `config` rather than dedicated columns per type.
+// A configured RTSP camera ("channel") the recognition engine reads frames from. Connection
+// details (host, port, path, credentials) live in `config` (validated by RtspConfigSchema).
 model VideoFeedSource {
   id                  String              @id @default(cuid())
   name                String
-  type                VideoFeedSourceType
   config              Json
   enabled             Boolean             @default(true)
-  // Only the seeded default webcam channel is non-removable.
-  removable           Boolean             @default(true)
   // null = use SFace's hardcoded reference default; set via the per-channel test-match calibration flow.
   similarityThreshold Float?
   // How many frames per second are analyzed for faces. All frames are still read to keep the

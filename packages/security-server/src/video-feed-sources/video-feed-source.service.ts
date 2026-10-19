@@ -1,16 +1,16 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, VideoFeedSource } from '@prisma/client';
 import { parsePgVector } from '../common/pgvector.util';
+import { MediaServerService } from '../media-server/media-server.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaceDetectionService } from '../recognition/face-detection.service';
 import { FaceRecognitionService } from '../recognition/face-recognition.service';
 import { VideoCaptureService } from '../recognition/video-capture.service';
 import {
   mergeStoredCredentials,
-  parseVideoFeedSourceConfig,
+  parseRtspConfig,
   redactConfig,
   RtspConfigSchema,
-  UsbConfigSchema,
 } from './video-feed-source-config.schema';
 import { CreateVideoFeedSourceDto, UpdateVideoFeedSourceDto, VerifyVideoFeedSourceDto } from './video-feed-source.schema';
 
@@ -27,6 +27,7 @@ export class VideoFeedSourceService {
     private readonly videoCapture: VideoCaptureService,
     private readonly faceDetection: FaceDetectionService,
     private readonly faceRecognition: FaceRecognitionService,
+    private readonly mediaServer: MediaServerService,
   ) {}
 
   private serialize(source: VideoFeedSource) {
@@ -58,7 +59,6 @@ export class VideoFeedSourceService {
     const created = await this.prisma.videoFeedSource.create({
       data: {
         name: dto.name,
-        type: dto.type,
         config: dto.config,
         enabled: dto.enabled ?? true,
       },
@@ -69,10 +69,7 @@ export class VideoFeedSourceService {
   async update(id: string, dto: UpdateVideoFeedSourceDto) {
     const existing = await this.findRaw(id);
     const config = dto.config
-      ? parseVideoFeedSourceConfig(
-          existing.type,
-          mergeStoredCredentials(existing.config as Record<string, unknown>, dto.config),
-        )
+      ? parseRtspConfig(mergeStoredCredentials(existing.config as Record<string, unknown>, dto.config))
       : (existing.config as Record<string, unknown>);
 
     const updated = await this.prisma.videoFeedSource.update({
@@ -90,12 +87,12 @@ export class VideoFeedSourceService {
   }
 
   async remove(id: string) {
-    const existing = await this.findRaw(id);
-    if (!existing.removable) {
-      throw new ForbiddenException('This channel cannot be removed.');
+    await this.findRaw(id);
+    // Checked up front: the Alert FK (onDelete: Restrict) would block it anyway, but through the pg
+    // driver adapter that surfaces as an untyped error the PrismaExceptionFilter can't map to a 409.
+    if ((await this.prisma.alert.count({ where: { channelId: id } })) > 0) {
+      throw new ConflictException('This channel has alert history and cannot be deleted.');
     }
-    // A P2003 here (Alert history referencing this channel) is translated to a 409
-    // by the global PrismaExceptionFilter rather than surfacing a raw constraint error.
     await this.prisma.videoFeedSource.delete({ where: { id } });
   }
 
@@ -103,18 +100,23 @@ export class VideoFeedSourceService {
     const incoming = dto.channelId
       ? mergeStoredCredentials((await this.findRaw(dto.channelId)).config as Record<string, unknown>, dto.config)
       : dto.config;
-    const parsed = (dto.type === 'RTSP' ? RtspConfigSchema : UsbConfigSchema).safeParse(incoming);
+    const parsed = RtspConfigSchema.safeParse(incoming);
     if (!parsed.success) {
       throw new BadRequestException('The connection details are incomplete or invalid.');
     }
-    const result = this.videoCapture.captureFrame(dto.type, parsed.data);
+    const result = this.videoCapture.captureFrame(this.videoCapture.buildRtspUrl(parsed.data));
     return result.reachable ? { reachable: true } : { reachable: false, error: result.error };
   }
 
   async testMatch(id: string) {
     const source = await this.findRaw(id);
-    const config = parseVideoFeedSourceConfig(source.type, source.config);
-    const captureResult = this.videoCapture.captureFrame(source.type, config);
+    // An enabled channel is read through its go2rtc re-stream, so test-matching doesn't open an
+    // extra connection to the camera; a disabled one has no re-stream, so the camera is used directly.
+    const captureResult = this.videoCapture.captureFrame(
+      source.enabled
+        ? this.mediaServer.restreamUrl(source.id)
+        : this.videoCapture.buildRtspUrl(parseRtspConfig(source.config)),
+    );
     if (!captureResult.reachable || !captureResult.frame) {
       throw new BadRequestException(captureResult.error ?? 'Could not capture a frame from this channel.');
     }

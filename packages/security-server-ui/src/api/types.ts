@@ -1,5 +1,3 @@
-export type VideoFeedSourceType = 'RTSP' | 'USB';
-
 export interface RtspConfig {
   host: string;
   port: number;
@@ -8,17 +6,11 @@ export interface RtspConfig {
   password?: string;
 }
 
-export interface UsbConfig {
-  deviceIndex: number | string;
-}
-
 export interface VideoFeedSource {
   id: string;
   name: string;
-  type: VideoFeedSourceType;
-  config: Partial<RtspConfig> & Partial<UsbConfig>;
+  config: Partial<RtspConfig>;
   enabled: boolean;
-  removable: boolean;
   similarityThreshold: number | null;
   recognitionFps: number;
   createdAt: string;

@@ -1,9 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { VideoFeedSource } from '@prisma/client';
 import * as cv from '@u4/opencv4nodejs';
+import { MediaServerService } from '../media-server/media-server.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { VideoCaptureService } from '../recognition/video-capture.service';
-import { parseVideoFeedSourceConfig } from '../video-feed-sources/video-feed-source-config.schema';
 import { AlertPipelineService } from './alert-pipeline.service';
 
 // Frames are always read (to stay near-live and drain the stream buffer), but only handed off
@@ -12,10 +11,11 @@ import { AlertPipelineService } from './alert-pipeline.service';
 // Downscale factor applied to frames before handing them off downstream.
 const DOWNSCALE_FACTOR = 0.5;
 const MAX_CONSECUTIVE_FAILURES = 5;
-// Consecutive failures to even open the source (camera unplugged, RTSP host unreachable, etc.)
-// before giving up and disabling the channel, rather than retrying forever.
-const MAX_OPEN_FAILURES = 5;
-const RECONNECT_BACKOFF_MS = 5_000;
+// Reconnects back off from 5s to 60s and keep going indefinitely. A camera or media-server outage
+// is usually temporary, so channels are never switched off automatically — they resume by
+// themselves once the stream is back.
+const RECONNECT_BACKOFF_MIN_MS = 5_000;
+const RECONNECT_BACKOFF_MAX_MS = 60_000;
 
 interface ChannelLoop {
   channel: VideoFeedSource;
@@ -23,22 +23,33 @@ interface ChannelLoop {
   capture?: cv.VideoCapture;
   lastProcessedAt: number;
   consecutiveFailures: number;
-  openFailures: number;
+  // Consecutive failed (re)connects, driving the backoff; reset once frames flow again.
+  reconnectAttempts: number;
   donePromise: Promise<void>;
   // Guards against overlapping detection work if it's slower than the frame-skip interval —
   // a frame is simply dropped rather than queued if the previous one is still processing.
   processing: boolean;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function backoffMs(attempt: number): number {
+  return Math.min(RECONNECT_BACKOFF_MIN_MS * 2 ** Math.max(0, attempt - 1), RECONNECT_BACKOFF_MAX_MS);
+}
+
+// Sleeps in short slices so a stopped loop (channel disabled, app shutting down) exits promptly
+// instead of finishing a backoff of up to a minute first.
+async function sleepUnlessStopped(loop: ChannelLoop, ms: number): Promise<void> {
+  const until = Date.now() + ms;
+  while (!loop.stopped && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(500, until - Date.now())));
+  }
 }
 
 function configsEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-// Manages one continuous read loop per enabled channel. There's no periodic DB polling here —
+// Manages one continuous read loop per enabled channel, reading the channel's re-stream from the
+// go2rtc media server (see MediaServerService) rather than the camera itself. There's no periodic DB polling here —
 // channel create/update/delete all happen through the UI, so `reconcile()` only runs once at
 // startup and whenever the /system/reload endpoint is called (see SystemController), which the
 // UI hits right after any channel mutation. Uses VideoCapture's async API (readAsync) throughout
@@ -51,7 +62,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly videoCapture: VideoCaptureService,
+    private readonly mediaServer: MediaServerService,
     private readonly alertPipeline: AlertPipelineService,
   ) {}
 
@@ -66,6 +77,9 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
   async reconcile() {
     const enabledChannels = await this.prisma.videoFeedSource.findMany({ where: { enabled: true } });
     const enabledById = new Map(enabledChannels.map((channel) => [channel.id, channel]));
+    // Streams first, so loops (re)opening below find them. If go2rtc is unreachable, loops just
+    // keep retrying and the periodic resync adds the streams once it's back.
+    await this.mediaServer.sync(enabledChannels);
 
     const stopPromises: Promise<void>[] = [];
     for (const [channelId, loop] of this.loops) {
@@ -84,8 +98,8 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
       }
 
       // Already running — refresh the in-memory snapshot so name/similarityThreshold/recognitionFps changes
-      // take effect immediately. If the connection details themselves changed, force a
-      // reconnect so the next capture open picks up the new source string.
+      // take effect immediately. If the connection details changed, go2rtc's stream source was
+      // just updated by sync() above; reconnect so the loop reads from the new camera source.
       const configChanged = !configsEqual(existingLoop.channel.config, channel.config);
       existingLoop.channel = channel;
       if (configChanged && existingLoop.capture) {
@@ -101,7 +115,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
       stopped: false,
       lastProcessedAt: 0,
       consecutiveFailures: 0,
-      openFailures: 0,
+      reconnectAttempts: 0,
       donePromise: Promise.resolve(),
       processing: false,
     };
@@ -118,36 +132,20 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Stopped ingestion loop for channel "${loop.channel.name}" (${loop.channel.id})`);
   }
 
-  // Called from within the loop's own runLoop() once it gives up retrying, so it removes itself
-  // from `loops` directly rather than going through stopLoop() (which awaits donePromise — the
-  // very promise this call is running inside of, which would deadlock).
-  private async disableChannel(loop: ChannelLoop, reason: string) {
-    this.logger.warn(
-      `Channel "${loop.channel.name}": ${reason} after ${MAX_OPEN_FAILURES} attempts — disabling channel.`,
-    );
-    await this.prisma.videoFeedSource.update({ where: { id: loop.channel.id }, data: { enabled: false } });
-    loop.stopped = true;
-    this.loops.delete(loop.channel.id);
-  }
-
   private async runLoop(loop: ChannelLoop) {
     while (!loop.stopped) {
       if (!loop.capture) {
         try {
-          const config = parseVideoFeedSourceConfig(loop.channel.type, loop.channel.config);
-          const source = this.videoCapture.buildSource(loop.channel.type, config);
-          loop.capture = new cv.VideoCapture(source);
-          loop.openFailures = 0;
+          loop.capture = new cv.VideoCapture(this.mediaServer.restreamUrl(loop.channel.id));
         } catch (error) {
-          loop.openFailures++;
-          if (loop.openFailures >= MAX_OPEN_FAILURES) {
-            await this.disableChannel(loop, 'failed to open source');
-            break;
-          }
+          loop.reconnectAttempts++;
+          const delay = backoffMs(loop.reconnectAttempts);
           this.logger.warn(
-            `Channel "${loop.channel.name}": failed to open source — retrying (${loop.openFailures}/${MAX_OPEN_FAILURES}): ${error}`,
+            `Channel "${loop.channel.name}": failed to open stream (attempt ${loop.reconnectAttempts}) — retrying in ${delay / 1000}s: ${error}`,
           );
-          await sleep(RECONNECT_BACKOFF_MS);
+          // The stream may be missing because go2rtc restarted; restore it before the next attempt.
+          this.mediaServer.requestSync();
+          await sleepUnlessStopped(loop, delay);
           continue;
         }
       }
@@ -166,12 +164,14 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
           loop.capture.release();
           loop.capture = undefined;
           loop.consecutiveFailures = 0;
-          await sleep(RECONNECT_BACKOFF_MS);
+          loop.reconnectAttempts++;
+          await sleepUnlessStopped(loop, backoffMs(loop.reconnectAttempts));
         }
         continue;
       }
 
       loop.consecutiveFailures = 0;
+      loop.reconnectAttempts = 0;
       const intervalMs = 1000 / loop.channel.recognitionFps;
       const now = Date.now();
       if (now - loop.lastProcessedAt >= intervalMs && !loop.processing) {

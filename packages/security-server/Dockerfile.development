@@ -9,7 +9,7 @@ FROM node:24.19.0-bookworm-slim
 #
 # postgresql-client: db access
 # libopencv-dev: OpenCV headers + libopencv_* runtime libs (YuNet/SFace detection
-# and recognition via cv.dnn, RTSP/USB ingestion via cv.VideoCapture) for
+# and recognition via cv.dnn, RTSP ingestion via cv.VideoCapture) for
 # @u4/opencv4nodejs to compile its bindings against
 # build-essential/python3/pkg-config: native build toolchain
 RUN apt-get update && apt-get install -y --no-install-recommends \
