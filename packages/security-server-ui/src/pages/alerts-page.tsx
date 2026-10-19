@@ -2,9 +2,6 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   MutedOutlined,
-  PauseCircleOutlined,
-  PlayCircleOutlined,
-  ReloadOutlined,
 } from '@ant-design/icons';
 import {
   keepPreviousData,
@@ -21,7 +18,6 @@ import {
   Space,
   Table,
   Tag,
-  Tooltip,
   Typography,
 } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -38,16 +34,15 @@ const { Title } = Typography;
 
 const ALERTS_STREAM_URL = '/api/alerts/stream';
 
-type StreamStatus = 'connecting' | 'live' | 'reconnecting' | 'paused';
+type StreamStatus = 'connecting' | 'live' | 'reconnecting';
 
 const STREAM_STATUS_BADGE: Record<
   StreamStatus,
-  { status: 'success' | 'processing' | 'warning' | 'default'; text: string }
+  { status: 'success' | 'processing' | 'warning'; text: string }
 > = {
   live: { status: 'success', text: 'Live' },
   connecting: { status: 'processing', text: 'Connecting…' },
   reconnecting: { status: 'warning', text: 'Reconnecting…' },
-  paused: { status: 'default', text: 'Paused' },
 };
 const NEW_ALERT_FLASH_MS = 30_000;
 
@@ -105,11 +100,7 @@ function matchesFilter(alert: Alert, filter: AlertsFilter): boolean {
 
 export default function AlertsPage() {
   const queryClient = useQueryClient();
-  const [isPaused, setIsPaused] = useState(false);
   const [streamStatus, setStreamStatus] = useState<StreamStatus>('connecting');
-  // The initial useQuery fetch already covers the very first connection; every later (re)connect
-  // refetches to pick up anything that changed while disconnected or paused.
-  const isFirstConnectionRef = useRef(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -119,12 +110,7 @@ export default function AlertsPage() {
     setPage(1);
   };
 
-  const {
-    data: alertPage,
-    isLoading,
-    isFetching,
-    refetch,
-  } = useQuery({
+  const { data: alertPage, isLoading } = useQuery({
     queryKey: ['alerts', 'page', { page, pageSize, ...filter }],
     queryFn: () => alertsApi.list({ page, pageSize, ...filter }),
     // Keeps the current rows on screen while the next page/filter loads, instead of flashing empty.
@@ -173,14 +159,11 @@ export default function AlertsPage() {
 
   // Live updates over Server-Sent Events instead of polling.
   useEffect(() => {
-    if (isPaused) {
-      setStreamStatus('paused');
-      return;
-    }
     const resync = () =>
       queryClient.invalidateQueries({ queryKey: ['alerts'] });
-    let refetchOnOpen = !isFirstConnectionRef.current;
-    isFirstConnectionRef.current = false;
+    // The initial useQuery fetch covers the first connection; any reconnect refetches to pick up
+    // whatever changed while disconnected.
+    let refetchOnOpen = false;
 
     setStreamStatus('connecting');
     const source = new EventSource(ALERTS_STREAM_URL);
@@ -239,7 +222,7 @@ export default function AlertsPage() {
     source.addEventListener('resync', resync);
 
     return () => source.close();
-  }, [isPaused, queryClient]);
+  }, [queryClient]);
 
   // Ticks every second so rows stop flashing on time.
   useEffect(() => {
@@ -276,39 +259,25 @@ export default function AlertsPage() {
 
   return (
     <div>
+      {/* Browsers block audio until the user interacts with the page; any click unlocks it (see
+          the pointerdown/keydown listener above), after which this banner disappears. */}
+      {!isSoundEnabled && (
+        <AntAlert
+          type="warning"
+          showIcon
+          icon={<MutedOutlined />}
+          style={{ marginBottom: 16 }}
+          message="Click anywhere on the page to enable sound alerts."
+        />
+      )}
       <div className="list-table-header" style={{ marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>
           Alerts
         </Title>
         <div className="list-table-header-utilities">
           <Space size={8}>
-            {!isSoundEnabled && (
-              <Tooltip title="The browser blocks sound until you interact with the page">
-                <Button
-                  icon={<MutedOutlined />}
-                  onClick={() => getAudioContext().resume()}
-                >
-                  Enable sound
-                </Button>
-              </Tooltip>
-            )}
             <Badge {...STREAM_STATUS_BADGE[streamStatus]} />
-            <Button
-              icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
-              onClick={() => setIsPaused((paused) => !paused)}
-            >
-              {isPaused ? 'Resume' : 'Pause'}
-            </Button>
             <AlertsListFilter {...filterProps} />
-            {isPaused && (
-              <Tooltip title="Refresh">
-                <Button
-                  icon={<ReloadOutlined />}
-                  loading={isFetching}
-                  onClick={() => refetch()}
-                />
-              </Tooltip>
-            )}
           </Space>
           <AlertsListFilterChips {...filterProps} />
         </div>
