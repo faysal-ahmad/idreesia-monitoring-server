@@ -53,6 +53,8 @@ COPY --from=build --chown=idreesia:idreesia /app/package.json /app/yarn.lock ./
 COPY --from=build --chown=idreesia:idreesia /app/packages/security-server/dist ./packages/security-server/dist
 COPY --from=build --chown=idreesia:idreesia /app/packages/security-server/prisma ./packages/security-server/prisma
 COPY --from=build --chown=idreesia:idreesia /app/packages/security-server/models ./packages/security-server/models
+# prisma/seed.ts imports the config registry from src (only depends on zod), so ship just that file
+COPY --from=build --chown=idreesia:idreesia /app/packages/security-server/src/configuration/configuration.schema.ts ./packages/security-server/src/configuration/configuration.schema.ts
 
 USER idreesia
 
