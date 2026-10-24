@@ -1,4 +1,4 @@
-FROM node:22.23.4-bookworm-slim
+FROM node:24.22.1-bookworm-slim
 
 # Both dev containers share the repo's .nx cache/lock state via the bind mount below —
 # a persistent daemon from one container gets confused by the other's runs (false
