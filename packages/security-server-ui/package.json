@@ -1,5 +1,13 @@
 {
   "name": "@idreesia/security-server-ui",
   "version": "0.1.0",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "@ant-design/icons": "^6",
+    "@tanstack/react-query": "^5",
+    "antd": "^6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "6.30.3"
+  }
 }

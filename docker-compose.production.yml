@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg18
+    image: pgvector/pgvector:0.8.7-pg18-bookworm
     restart: unless-stopped
     environment:
       POSTGRES_DB: idreesia
@@ -38,7 +38,7 @@ services:
     depends_on:
       - security-server
     ports:
-      - "4200:4200"
+      - "80:4200"
     restart: unless-stopped
 
   security-server:

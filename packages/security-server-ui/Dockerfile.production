@@ -1,24 +1,15 @@
-FROM node:22.17.0-alpine3.22 AS build
-
-# This is a yarn workspace with a single shared node_modules — @u4/opencv4nodejs
-# (a security-server-only dependency) still needs to compile here since `yarn
-# install` resolves the whole workspace's tree, not just this package's own deps.
-RUN apk --no-cache add \
-  opencv-dev \
-  build-base \
-  g++ \
-  python3 \
-  pkgconfig
-ENV OPENCV4NODEJS_DISABLE_AUTOBUILD=1
-ENV OPENCV_INCLUDE_DIR=/usr/include/opencv4
-ENV OPENCV_LIB_DIR=/usr/lib
-ENV MAKEFLAGS=-j1
+FROM node:22.23.4-bookworm-slim AS build
 
 WORKDIR /app
 
 COPY . .
 
-RUN yarn install --frozen-lockfile
+# Yarn 1 installs every workspace's dependencies, including the security-server's
+# native @u4/opencv4nodejs. --ignore-scripts skips its node-gyp build (the UI never
+# loads it), so this stage needs no OpenCV or compiler toolchain. The UI's own
+# native tooling (swc, rolldown, parcel watcher, nx) ships prebuilt binaries as
+# optional dependencies, so it doesn't rely on install scripts.
+RUN yarn install --frozen-lockfile --ignore-scripts
 RUN yarn nx run @idreesia/security-server-ui:build
 
 FROM nginx:1.27-alpine AS production

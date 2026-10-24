@@ -1,0 +1,9 @@
+# The production builds `COPY . .` and then `yarn install` inside the image, so
+# dependencies and build output must come from that install/build, never from the
+# host's tree (whose native modules are compiled for a different OS/libc). The
+# development containers bind-mount the repo instead of copying it, so this only
+# trims their build context.
+node_modules
+**/node_modules
+**/dist
+.nx

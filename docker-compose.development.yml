@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg18
+    image: pgvector/pgvector:0.8.7-pg18-bookworm
     restart: unless-stopped
     environment:
       POSTGRES_DB: idreesia
@@ -28,6 +28,10 @@ services:
     env_file: ./packages/security-server/.env
     volumes:
       - .:/app
+      # Each container gets its own node_modules, so the two containers' startup `yarn install`
+      # runs (which compile native modules) can't race on or overwrite a shared tree, and the
+      # host's own node_modules (built for macOS) stays untouched.
+      - security-server-node-modules:/app/node_modules
       # Alert frame images (see ALERT_IMAGES_DIR), kept out of Postgres.
       - alert-images:/data/alert-images
 
@@ -57,6 +61,8 @@ services:
       - "4200:4200"
     volumes:
       - .:/app
+      # Own node_modules, see security-server above.
+      - security-server-ui-node-modules:/app/node_modules
     healthcheck:
       start_period: 30s
       interval: 10s
@@ -66,3 +72,5 @@ services:
 volumes:
   postgres-dev: {}
   alert-images: {}
+  security-server-node-modules: {}
+  security-server-ui-node-modules: {}
