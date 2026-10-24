@@ -1,6 +1,8 @@
 import { Controller, Get, Header, NotFoundException, Param, StreamableFile } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 import { AlertImageStorageService } from './alert-image-storage.service';
 
+@Public()
 @Controller('alert-images')
 export class AlertImageController {
   constructor(private readonly storage: AlertImageStorageService) {}

@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { Public } from '../auth/public.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { CreateMonitoringProfileSchema, UpdateMonitoringProfileSchema } from './monitoring-profile.schema';
 import { MonitoringProfileService } from './monitoring-profile.service';
@@ -26,6 +27,8 @@ export class MonitoringProfileController {
     return this.service.list();
   }
 
+  // Public for the Alerts page's dialog, which shows the matched profile's photos.
+  @Public()
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);

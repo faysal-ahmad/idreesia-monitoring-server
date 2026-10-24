@@ -15,7 +15,6 @@ import {
   Image,
   Pagination,
   Progress,
-  Space,
   Table,
   Tag,
   Typography,
@@ -25,6 +24,7 @@ import { useSearchParams } from 'react-router-dom';
 import { alertsApi } from '../api/alerts';
 import { Alert, AlertPage } from '../api/types';
 import { AlertImagesModal } from '../components/alert-images-modal';
+import ChannelHealthSummary from '../components/channel-health-summary';
 import AlertsListFilter, {
   AlertsFilter,
   AlertsListFilterChips,
@@ -38,11 +38,11 @@ type StreamStatus = 'connecting' | 'live' | 'reconnecting';
 
 const STREAM_STATUS_BADGE: Record<
   StreamStatus,
-  { status: 'success' | 'processing' | 'warning'; text: string }
+  { status: 'success' | 'processing' | 'error'; text: string }
 > = {
-  live: { status: 'success', text: 'Live' },
-  connecting: { status: 'processing', text: 'Connecting…' },
-  reconnecting: { status: 'warning', text: 'Reconnecting…' },
+  live: { status: 'success', text: 'Server connected' },
+  connecting: { status: 'processing', text: 'Connecting to server' },
+  reconnecting: { status: 'error', text: 'Not connected' },
 };
 const NEW_ALERT_FLASH_MS = 30_000;
 
@@ -274,11 +274,13 @@ export default function AlertsPage() {
         <Title level={3} style={{ margin: 0 }}>
           Alerts
         </Title>
+        {/* Channel health only means anything while the server itself is reachable. */}
+        <div className="alerts-status-bar">
+          <Badge {...STREAM_STATUS_BADGE[streamStatus]} />
+          {streamStatus === 'live' && <ChannelHealthSummary />}
+        </div>
         <div className="list-table-header-utilities">
-          <Space size={8}>
-            <Badge {...STREAM_STATUS_BADGE[streamStatus]} />
-            <AlertsListFilter {...filterProps} />
-          </Space>
+          <AlertsListFilter {...filterProps} />
           <AlertsListFilterChips {...filterProps} />
         </div>
       </div>

@@ -10,6 +10,7 @@ import {
   Sse,
 } from '@nestjs/common';
 import { interval, map, merge, Observable, takeUntil } from 'rxjs';
+import { Public } from '../auth/public.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AlertEventsService } from './alert-events.service';
 import { ListAlertsQuerySchema, ReviewAlertSchema } from './alert.schema';
@@ -17,6 +18,8 @@ import { AlertService } from './alert.service';
 
 const HEARTBEAT_MS = 30_000;
 
+// Public, reviews included: the Alerts page is open to everyone, not just admins.
+@Public()
 @Controller('alerts')
 export class AlertController {
   constructor(

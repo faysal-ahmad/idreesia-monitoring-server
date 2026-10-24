@@ -26,6 +26,9 @@ services:
         condition: service_started
     restart: unless-stopped
     env_file: ./packages/security-server/.env
+    environment:
+      # Password for the admin pages (everything except Alerts).
+      ADMIN_PASSWORD: admin
     volumes:
       - .:/app
       # Each container gets its own node_modules, so the two containers' startup `yarn install`

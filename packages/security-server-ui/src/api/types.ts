@@ -81,3 +81,16 @@ export interface Configuration {
   alertsRetentionDays: number;
   includeTestProfilesInAlerts: boolean;
 }
+
+export interface AuthSession {
+  authenticated: boolean;
+}
+
+export type ChannelHealthStatus = 'online' | 'connecting' | 'offline';
+
+export interface ChannelHealth {
+  channelId: string;
+  name: string;
+  status: ChannelHealthStatus;
+  lastFrameAt: string | null;
+}

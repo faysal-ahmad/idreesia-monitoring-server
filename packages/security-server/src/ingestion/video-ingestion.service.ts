@@ -16,12 +16,26 @@ const MAX_CONSECUTIVE_FAILURES = 5;
 // themselves once the stream is back.
 const RECONNECT_BACKOFF_MIN_MS = 5_000;
 const RECONNECT_BACKOFF_MAX_MS = 60_000;
+// A channel counts as online while frames keep arriving; this long without one and it's offline.
+const FRAME_STALE_MS = 10_000;
+
+// connecting: started (or restarted) and hasn't delivered a frame or failed yet.
+export type ChannelHealthStatus = 'online' | 'connecting' | 'offline';
+
+export interface ChannelHealth {
+  channelId: string;
+  name: string;
+  status: ChannelHealthStatus;
+  lastFrameAt: string | null;
+}
 
 interface ChannelLoop {
   channel: VideoFeedSource;
   stopped: boolean;
   capture?: cv.VideoCapture;
   lastProcessedAt: number;
+  // When the last good frame was read, for health reporting; 0 until the first one.
+  lastFrameAt: number;
   consecutiveFailures: number;
   // Consecutive failed (re)connects, driving the backoff; reset once frames flow again.
   reconnectAttempts: number;
@@ -109,11 +123,30 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // One entry per enabled channel (each has a loop), derived from how recently it delivered a frame.
+  health(): ChannelHealth[] {
+    const now = Date.now();
+    return Array.from(this.loops.values())
+      .map(({ channel, lastFrameAt, reconnectAttempts }) => {
+        let status: ChannelHealthStatus = 'offline';
+        if (lastFrameAt && now - lastFrameAt < FRAME_STALE_MS) status = 'online';
+        else if (!lastFrameAt && reconnectAttempts === 0) status = 'connecting';
+        return {
+          channelId: channel.id,
+          name: channel.name,
+          status,
+          lastFrameAt: lastFrameAt ? new Date(lastFrameAt).toISOString() : null,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   private startLoop(channel: VideoFeedSource) {
     const loop: ChannelLoop = {
       channel,
       stopped: false,
       lastProcessedAt: 0,
+      lastFrameAt: 0,
       consecutiveFailures: 0,
       reconnectAttempts: 0,
       donePromise: Promise.resolve(),
@@ -172,6 +205,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
 
       loop.consecutiveFailures = 0;
       loop.reconnectAttempts = 0;
+      loop.lastFrameAt = Date.now();
       const intervalMs = 1000 / loop.channel.recognitionFps;
       const now = Date.now();
       if (now - loop.lastProcessedAt >= intervalMs && !loop.processing) {

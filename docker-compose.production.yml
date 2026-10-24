@@ -31,16 +31,6 @@ services:
       - '{"api":{"listen":":1984"},"rtsp":{"listen":":8554"},"webrtc":{"listen":""}}'
     # No published ports: only the security server and the UI's nginx (same network) reach it.
 
-  security-server-ui:
-    build:
-      context: .
-      dockerfile: ./packages/security-server-ui/Dockerfile.production
-    depends_on:
-      - security-server
-    ports:
-      - "80:4200"
-    restart: unless-stopped
-
   security-server:
     build:
       context: .
@@ -51,10 +41,23 @@ services:
       go2rtc:
         condition: service_started
     restart: unless-stopped
+    environment:
+      # Password for the admin pages (everything except Alerts). Change it before deploying.
+      ADMIN_PASSWORD: change-me
     volumes:
       # Alert frame images (see ALERT_IMAGES_DIR) on a folder on the host machine. The server runs as
       # UID 1001 (see Dockerfile.production), so that folder must be writable by UID 1001.
       - ${ALERT_IMAGES_HOST_DIR:-/data/alert-images}:/data/alert-images
+
+  security-server-ui:
+    build:
+      context: .
+      dockerfile: ./packages/security-server-ui/Dockerfile.production
+    depends_on:
+      - security-server
+    ports:
+      - "80:4200"
+    restart: unless-stopped
 
 volumes:
   postgres-data: {}
