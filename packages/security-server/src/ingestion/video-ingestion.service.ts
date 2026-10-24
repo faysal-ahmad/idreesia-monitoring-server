@@ -3,6 +3,7 @@ import { VideoFeedSource } from '@prisma/client';
 import * as cv from '@u4/opencv4nodejs';
 import { MediaServerService } from '../media-server/media-server.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SystemLogService } from '../system-logs/system-log.service';
 import { AlertPipelineService } from './alert-pipeline.service';
 
 // Frames are always read (to stay near-live and drain the stream buffer), but only handed off
@@ -11,11 +12,13 @@ import { AlertPipelineService } from './alert-pipeline.service';
 // Downscale factor applied to frames before handing them off downstream.
 const DOWNSCALE_FACTOR = 0.5;
 const MAX_CONSECUTIVE_FAILURES = 5;
-// Reconnects back off from 5s to 60s and keep going indefinitely. A camera or media-server outage
-// is usually temporary, so channels are never switched off automatically — they resume by
-// themselves once the stream is back.
+// Reconnects back off from 5s to 60s. After MAX_RECONNECT_ATTEMPTS in a row without a frame the
+// channel is disabled in the DB and its loop stops; re-enabling it in the UI starts it afresh.
+// Besides not retrying a dead camera forever, this bounds a native leak: @u4/opencv4nodejs's
+// VideoCapture constructor never frees its native object when the open fails.
 const RECONNECT_BACKOFF_MIN_MS = 5_000;
 const RECONNECT_BACKOFF_MAX_MS = 60_000;
+const MAX_RECONNECT_ATTEMPTS = 10;
 // A channel counts as online while frames keep arriving; this long without one and it's offline.
 const FRAME_STALE_MS = 10_000;
 
@@ -73,11 +76,16 @@ function configsEqual(a: unknown, b: unknown): boolean {
 export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(VideoIngestionService.name);
   private readonly loops = new Map<string, ChannelLoop>();
+  // Channels a loop disabled itself (see disableUnreachableChannel), keyed by id, valued by
+  // disableSeq at the time. Lets a reconcile that read the DB before the disable skip them.
+  private readonly selfDisabled = new Map<string, number>();
+  private disableSeq = 0;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly mediaServer: MediaServerService,
     private readonly alertPipeline: AlertPipelineService,
+    private readonly systemLog: SystemLogService,
   ) {}
 
   async onModuleInit() {
@@ -89,6 +97,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
   }
 
   async reconcile() {
+    const seqAtRead = this.disableSeq;
     const enabledChannels = await this.prisma.videoFeedSource.findMany({ where: { enabled: true } });
     const enabledById = new Map(enabledChannels.map((channel) => [channel.id, channel]));
     // Streams first, so loops (re)opening below find them. If go2rtc is unreachable, loops just
@@ -107,6 +116,9 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     for (const [channelId, channel] of enabledById) {
       const existingLoop = this.loops.get(channelId);
       if (!existingLoop) {
+        // Disabled by its own loop after the read above, so `channel` is stale — don't restart it.
+        if ((this.selfDisabled.get(channelId) ?? 0) > seqAtRead) continue;
+        this.selfDisabled.delete(channelId);
         this.startLoop(channel);
         continue;
       }
@@ -172,6 +184,10 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
           loop.capture = new cv.VideoCapture(this.mediaServer.restreamUrl(loop.channel.id));
         } catch (error) {
           loop.reconnectAttempts++;
+          if (loop.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            await this.disableUnreachableChannel(loop, `failed to open stream: ${error}`);
+            break;
+          }
           const delay = backoffMs(loop.reconnectAttempts);
           this.logger.warn(
             `Channel "${loop.channel.name}": failed to open stream (attempt ${loop.reconnectAttempts}) — retrying in ${delay / 1000}s: ${error}`,
@@ -198,6 +214,10 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
           loop.capture = undefined;
           loop.consecutiveFailures = 0;
           loop.reconnectAttempts++;
+          if (loop.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            await this.disableUnreachableChannel(loop, 'stream keeps dropping without delivering frames');
+            break;
+          }
           await sleepUnlessStopped(loop, backoffMs(loop.reconnectAttempts));
         }
         continue;
@@ -211,6 +231,8 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
       if (now - loop.lastProcessedAt >= intervalMs && !loop.processing) {
         loop.lastProcessedAt = now;
         const downscaled = frame.rescale(DOWNSCALE_FACTOR);
+        // Free the full-resolution buffer now rather than leaving it to GC.
+        frame.release();
         loop.processing = true;
         this.alertPipeline
           .processFrame(loop.channel, downscaled)
@@ -222,5 +244,47 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     }
 
     loop.capture?.release();
+  }
+
+  // Gives up on a channel whose camera can't be reached. Called from inside its own loop, so it
+  // must not go through stopLoop (which awaits the loop's donePromise). A reconcile that read the
+  // DB before the update below would still see the channel enabled and, finding no loop, restart
+  // it — selfDisabled tells it not to.
+  private async disableUnreachableChannel(loop: ChannelLoop, reason: string) {
+    const { channel } = loop;
+    this.logger.error(
+      `Channel "${channel.name}": unreachable after ${loop.reconnectAttempts} attempts (${reason}) — disabling it`,
+    );
+    loop.stopped = true;
+    let disabled = false;
+    try {
+      // A SYSTEM entry, so the log tells this apart from an admin disabling the channel.
+      await this.prisma.$transaction(async (tx) => {
+        await tx.videoFeedSource.update({ where: { id: channel.id }, data: { enabled: false } });
+        await this.systemLog.record(
+          {
+            event: 'CHANNEL_DISABLED',
+            source: 'SYSTEM',
+            channel,
+            message: `Disabled automatically: camera unreachable after ${loop.reconnectAttempts} attempts (${reason})`,
+          },
+          tx,
+        );
+      });
+      disabled = true;
+    } catch (error) {
+      // Still stop the loop. The channel stays enabled in the DB, so it's retried on the next
+      // reconcile (startup or /system/reload); until then it has no loop and no health entry.
+      this.logger.error(`Channel "${channel.name}": failed to mark it disabled: ${error}`);
+    }
+    if (disabled) this.selfDisabled.set(channel.id, ++this.disableSeq);
+    if (this.loops.get(channel.id) === loop) this.loops.delete(channel.id);
+    // Drop its re-stream from go2rtc now rather than on the next periodic resync. Skipped if the
+    // DB is failing — the stream is still wanted, and the sync's own DB read would reject.
+    if (disabled) {
+      this.mediaServer
+        .syncEnabledChannels()
+        .catch((error) => this.logger.warn(`Channel "${channel.name}": stream sync after disabling failed: ${error}`));
+    }
   }
 }

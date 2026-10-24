@@ -3,18 +3,31 @@ import {
   Badge,
   Button,
   Checkbox,
+  DatePicker,
   Flex,
   Form,
   Popover,
   Select,
   Tag,
 } from 'antd';
+import dayjs, { Dayjs } from 'dayjs';
 import { useState } from 'react';
 
 export interface AlertsFilter {
   profileId?: string;
   channelId?: string;
+  // ISO timestamps; either end may be left open.
+  from?: string;
+  to?: string;
   hideTestProfiles: boolean;
+}
+
+// The form edits the time range as one RangePicker value rather than two ISO strings.
+interface AlertsFilterFormValues {
+  profileId?: string;
+  channelId?: string;
+  timeRange?: [Dayjs | null, Dayjs | null] | null;
+  hideTestProfiles?: boolean;
 }
 
 export interface AlertsFilterOption {
@@ -30,7 +43,7 @@ export interface AlertsListFilterProps {
 }
 
 interface FilterChip {
-  key: keyof AlertsFilter;
+  key: 'profileId' | 'channelId' | 'timeRange' | 'hideTestProfiles';
   label: string;
   value: string;
 }
@@ -47,6 +60,36 @@ const nameOf = (options: AlertsFilterOption[], id: string) =>
 
 const toSelectOptions = (options: AlertsFilterOption[]) =>
   options.map((option) => ({ value: option.id, label: option.name }));
+
+const TIME_FORMAT = 'YYYY-MM-DD HH:mm';
+
+const formatTime = (iso: string) => dayjs(iso).format(TIME_FORMAT);
+
+// The "last ..." presets only fix the start, leaving the end open so alerts arriving after the
+// filter is applied still show up.
+const TIME_RANGE_PRESETS: {
+  label: string;
+  value: () => [Dayjs, Dayjs | null];
+}[] = [
+  { label: 'Last hour', value: () => [dayjs().subtract(1, 'hour'), null] },
+  { label: 'Last 24 hours', value: () => [dayjs().subtract(24, 'hour'), null] },
+  { label: 'Last 7 days', value: () => [dayjs().subtract(7, 'day'), null] },
+  { label: 'Last 30 days', value: () => [dayjs().subtract(30, 'day'), null] },
+  { label: 'Today', value: () => [dayjs().startOf('day'), null] },
+  {
+    label: 'Yesterday',
+    value: () => [
+      dayjs().subtract(1, 'day').startOf('day'),
+      dayjs().subtract(1, 'day').endOf('day'),
+    ],
+  },
+];
+
+const timeRangeLabel = (from?: string, to?: string) => {
+  if (from && to) return `${formatTime(from)} – ${formatTime(to)}`;
+  if (from) return `Since ${formatTime(from)}`;
+  return to ? `Until ${formatTime(to)}` : '';
+};
 
 export const getAlertsFilterChips = ({
   filter,
@@ -68,6 +111,13 @@ export const getAlertsFilterChips = ({
       value: nameOf(channels, filter.channelId),
     });
   }
+  if (filter.from || filter.to) {
+    chips.push({
+      key: 'timeRange',
+      label: 'Time',
+      value: timeRangeLabel(filter.from, filter.to),
+    });
+  }
   if (filter.hideTestProfiles) {
     chips.push({
       key: 'hideTestProfiles',
@@ -83,12 +133,15 @@ export const AlertsListFilterChips = (props: AlertsListFilterProps) => {
   const chips = getAlertsFilterChips(props);
   if (chips.length === 0) return null;
 
-  const clearChip = (key: FilterChip['key']) =>
-    setFilter(
-      key === 'hideTestProfiles'
-        ? { ...filter, hideTestProfiles: false }
-        : { ...filter, [key]: undefined },
-    );
+  const clearChip = (key: FilterChip['key']) => {
+    if (key === 'hideTestProfiles') {
+      setFilter({ ...filter, hideTestProfiles: false });
+    } else if (key === 'timeRange') {
+      setFilter({ ...filter, from: undefined, to: undefined });
+    } else {
+      setFilter({ ...filter, [key]: undefined });
+    }
+  };
 
   return (
     <Flex
@@ -125,14 +178,18 @@ export const AlertsListFilterChips = (props: AlertsListFilterProps) => {
 
 const AlertsListFilter = (props: AlertsListFilterProps) => {
   const { filter, setFilter, profiles, channels } = props;
-  const [form] = Form.useForm<AlertsFilter>();
+  const [form] = Form.useForm<AlertsFilterFormValues>();
   const [open, setOpen] = useState(false);
   const activeFilterCount = getAlertsFilterChips(props).length;
 
-  const handleFinish = (values: AlertsFilter) => {
+  const handleFinish = (values: AlertsFilterFormValues) => {
+    const [from, to] = values.timeRange ?? [];
     setFilter({
       profileId: values.profileId || undefined,
       channelId: values.channelId || undefined,
+      // Whole minutes, as shown in the picker; the end includes all of its last minute.
+      from: from?.startOf('minute').toISOString(),
+      to: to?.endOf('minute').toISOString(),
       hideTestProfiles: !!values.hideTestProfiles,
     });
     setOpen(false);
@@ -163,6 +220,19 @@ const AlertsListFilter = (props: AlertsListFilterProps) => {
             options={toSelectOptions(channels)}
           />
         </Form.Item>
+        <Form.Item name="timeRange" label="Time" {...formItemLayout}>
+          <DatePicker.RangePicker
+            showTime={{
+              format: 'HH:mm',
+              defaultOpenValue: [dayjs().startOf('day'), dayjs().endOf('day')],
+            }}
+            format={TIME_FORMAT}
+            allowEmpty={[true, true]}
+            presets={TIME_RANGE_PRESETS}
+            placeholder={['Any time', 'Now']}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
         <Form.Item
           name="hideTestProfiles"
           valuePropName="checked"
@@ -190,7 +260,20 @@ const AlertsListFilter = (props: AlertsListFilterProps) => {
       placement="bottomRight"
       open={open}
       onOpenChange={(nextOpen) => {
-        if (nextOpen) form.setFieldsValue(filter);
+        if (nextOpen) {
+          form.setFieldsValue({
+            profileId: filter.profileId,
+            channelId: filter.channelId,
+            timeRange:
+              filter.from || filter.to
+                ? [
+                    filter.from ? dayjs(filter.from) : null,
+                    filter.to ? dayjs(filter.to) : null,
+                  ]
+                : null,
+            hideTestProfiles: filter.hideTestProfiles,
+          });
+        }
         setOpen(nextOpen);
       }}
       content={filterForm}

@@ -108,3 +108,39 @@ model Configuration {
 
   @@schema("security_server")
 }
+
+// Audit trail of notable server events, newest first on the admin System Logs page. Currently
+// every channel change: create/edit/delete through the UI, and enable/disable — by an admin, or
+// by the server when a channel's camera stays unreachable (see VideoIngestionService).
+model SystemLog {
+  id          String          @id @default(cuid())
+  timestamp   DateTime        @default(now())
+  event       SystemLogEvent
+  // ADMIN = done through the UI; SYSTEM = done by the server on its own.
+  source      SystemLogSource
+  // No FK to VideoFeedSource: entries outlive a deleted channel, so its name is kept as well.
+  channelId   String?
+  channelName String?
+  // Human-readable summary, e.g. which fields an edit changed (never credential values).
+  message     String
+
+  @@index([timestamp])
+  @@schema("security_server")
+}
+
+enum SystemLogEvent {
+  CHANNEL_CREATED
+  CHANNEL_UPDATED
+  CHANNEL_DELETED
+  CHANNEL_ENABLED
+  CHANNEL_DISABLED
+
+  @@schema("security_server")
+}
+
+enum SystemLogSource {
+  ADMIN
+  SYSTEM
+
+  @@schema("security_server")
+}

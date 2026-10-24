@@ -77,6 +77,8 @@ function parseFilter(params: URLSearchParams): AlertsFilter {
   return {
     profileId: params.get('profileId') ?? undefined,
     channelId: params.get('channelId') ?? undefined,
+    from: params.get('from') ?? undefined,
+    to: params.get('to') ?? undefined,
     hideTestProfiles: params.get('hideTestProfiles') === 'true',
   };
 }
@@ -85,6 +87,8 @@ function toSearchParams(filter: AlertsFilter): URLSearchParams {
   const params = new URLSearchParams();
   if (filter.profileId) params.set('profileId', filter.profileId);
   if (filter.channelId) params.set('channelId', filter.channelId);
+  if (filter.from) params.set('from', filter.from);
+  if (filter.to) params.set('to', filter.to);
   if (filter.hideTestProfiles) params.set('hideTestProfiles', 'true');
   return params;
 }
@@ -95,6 +99,9 @@ function matchesFilter(alert: Alert, filter: AlertsFilter): boolean {
   if (filter.profileId && alert.profile.id !== filter.profileId) return false;
   if (filter.channelId && alert.channel.id !== filter.channelId) return false;
   if (filter.hideTestProfiles && alert.profile.isTest) return false;
+  const time = Date.parse(alert.timestamp);
+  if (filter.from && time < Date.parse(filter.from)) return false;
+  if (filter.to && time > Date.parse(filter.to)) return false;
   return true;
 }
 

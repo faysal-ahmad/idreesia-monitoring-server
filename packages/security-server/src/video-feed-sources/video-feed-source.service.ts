@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FaceDetectionService } from '../recognition/face-detection.service';
 import { FaceRecognitionService } from '../recognition/face-recognition.service';
 import { VideoCaptureService } from '../recognition/video-capture.service';
+import { SystemLogService } from '../system-logs/system-log.service';
 import {
   mergeStoredCredentials,
   parseRtspConfig,
@@ -13,6 +14,37 @@ import {
   RtspConfigSchema,
 } from './video-feed-source-config.schema';
 import { CreateVideoFeedSourceDto, UpdateVideoFeedSourceDto, VerifyVideoFeedSourceDto } from './video-feed-source.schema';
+
+// What an edit actually changed, for its system log entry. The edit form sends every field on each
+// save, so unchanged ones are filtered out here. Credential values are never logged, only that
+// they changed.
+function describeChanges(before: VideoFeedSource, after: VideoFeedSource): string[] {
+  const changes: string[] = [];
+  if (before.name !== after.name) changes.push(`name "${before.name}" → "${after.name}"`);
+  const beforeConfig = parseRtspConfig(before.config);
+  const afterConfig = parseRtspConfig(after.config);
+  for (const key of ['host', 'port', 'path'] as const) {
+    if (beforeConfig[key] !== afterConfig[key]) {
+      changes.push(`${key} "${beforeConfig[key]}" → "${afterConfig[key]}"`);
+    }
+  }
+  if (
+    (beforeConfig.username || '') !== (afterConfig.username || '') ||
+    (beforeConfig.password || '') !== (afterConfig.password || '')
+  ) {
+    changes.push('credentials');
+  }
+  if (before.similarityThreshold !== after.similarityThreshold) {
+    const format = (value: number | null) => (value === null ? 'default' : value.toFixed(2));
+    changes.push(
+      `similarity threshold ${format(before.similarityThreshold)} → ${format(after.similarityThreshold)}`,
+    );
+  }
+  if (before.recognitionFps !== after.recognitionFps) {
+    changes.push(`recognition FPS ${before.recognitionFps} → ${after.recognitionFps}`);
+  }
+  return changes;
+}
 
 interface TestMatchImageRow {
   profileId: string;
@@ -28,6 +60,7 @@ export class VideoFeedSourceService {
     private readonly faceDetection: FaceDetectionService,
     private readonly faceRecognition: FaceRecognitionService,
     private readonly mediaServer: MediaServerService,
+    private readonly systemLog: SystemLogService,
   ) {}
 
   private serialize(source: VideoFeedSource) {
@@ -55,13 +88,27 @@ export class VideoFeedSourceService {
     return source;
   }
 
+  // Create/update/remove are only reached through the admin UI, so their log entries are ADMIN ones.
   async create(dto: CreateVideoFeedSourceDto) {
-    const created = await this.prisma.videoFeedSource.create({
-      data: {
-        name: dto.name,
-        config: dto.config,
-        enabled: dto.enabled ?? true,
-      },
+    const created = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.videoFeedSource.create({
+        data: {
+          name: dto.name,
+          config: dto.config,
+          enabled: dto.enabled ?? true,
+        },
+      });
+      const { host, port, path } = dto.config;
+      await this.systemLog.record(
+        {
+          event: 'CHANNEL_CREATED',
+          source: 'ADMIN',
+          channel: created,
+          message: `Created (${host}:${port}${path ? `/${path.replace(/^\//, '')}` : ''}, ${created.enabled ? 'enabled' : 'disabled'})`,
+        },
+        tx,
+      );
+      return created;
     });
     return this.serialize(created);
   }
@@ -72,28 +119,54 @@ export class VideoFeedSourceService {
       ? parseRtspConfig(mergeStoredCredentials(existing.config as Record<string, unknown>, dto.config))
       : (existing.config as Record<string, unknown>);
 
-    const updated = await this.prisma.videoFeedSource.update({
-      where: { id },
-      data: {
-        name: dto.name ?? existing.name,
-        config: config as Prisma.InputJsonValue,
-        enabled: dto.enabled ?? existing.enabled,
-        similarityThreshold:
-          dto.similarityThreshold === undefined ? existing.similarityThreshold : dto.similarityThreshold,
-        recognitionFps: dto.recognitionFps ?? existing.recognitionFps,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.videoFeedSource.update({
+        where: { id },
+        data: {
+          name: dto.name ?? existing.name,
+          config: config as Prisma.InputJsonValue,
+          enabled: dto.enabled ?? existing.enabled,
+          similarityThreshold:
+            dto.similarityThreshold === undefined ? existing.similarityThreshold : dto.similarityThreshold,
+          recognitionFps: dto.recognitionFps ?? existing.recognitionFps,
+        },
+      });
+      // A save that changes both settings and the enabled flag gets two entries, so enabling and
+      // disabling always show up as events of their own.
+      const changes = describeChanges(existing, updated);
+      if (changes.length > 0) {
+        await this.systemLog.record(
+          { event: 'CHANNEL_UPDATED', source: 'ADMIN', channel: updated, message: `Edited: ${changes.join('; ')}` },
+          tx,
+        );
+      }
+      if (updated.enabled !== existing.enabled) {
+        await this.systemLog.record(
+          {
+            event: updated.enabled ? 'CHANNEL_ENABLED' : 'CHANNEL_DISABLED',
+            source: 'ADMIN',
+            channel: updated,
+            message: updated.enabled ? 'Enabled by an admin' : 'Disabled by an admin',
+          },
+          tx,
+        );
+      }
+      return updated;
     });
     return this.serialize(updated);
   }
 
   async remove(id: string) {
-    await this.findRaw(id);
+    const existing = await this.findRaw(id);
     // Checked up front: the Alert FK (onDelete: Restrict) would block it anyway, but through the pg
     // driver adapter that surfaces as an untyped error the PrismaExceptionFilter can't map to a 409.
     if ((await this.prisma.alert.count({ where: { channelId: id } })) > 0) {
       throw new ConflictException('This channel has alert history and cannot be deleted.');
     }
-    await this.prisma.videoFeedSource.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.videoFeedSource.delete({ where: { id } });
+      await this.systemLog.record({ event: 'CHANNEL_DELETED', source: 'ADMIN', channel: existing, message: 'Deleted' }, tx);
+    });
   }
 
   async verify(dto: VerifyVideoFeedSourceDto) {

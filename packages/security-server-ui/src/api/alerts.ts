@@ -6,6 +6,9 @@ export interface ListAlertsParams {
   pageSize: number;
   profileId?: string;
   channelId?: string;
+  // ISO timestamps; either end may be left open.
+  from?: string;
+  to?: string;
   hideTestProfiles?: boolean;
 }
 
@@ -14,6 +17,8 @@ function toQueryString({
   pageSize,
   profileId,
   channelId,
+  from,
+  to,
   hideTestProfiles,
 }: ListAlertsParams) {
   const params = new URLSearchParams({
@@ -22,6 +27,8 @@ function toQueryString({
   });
   if (profileId) params.set('profileId', profileId);
   if (channelId) params.set('channelId', channelId);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
   if (hideTestProfiles) params.set('hideTestProfiles', 'true');
   return params.toString();
 }

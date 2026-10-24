@@ -3,13 +3,14 @@ import { AlertModule } from '../alerts/alert.module';
 import { ConfigurationModule } from '../configuration/configuration.module';
 import { MediaServerModule } from '../media-server/media-server.module';
 import { RecognitionModule } from '../recognition/recognition.module';
+import { SystemLogModule } from '../system-logs/system-log.module';
 import { AlertPipelineService } from './alert-pipeline.service';
 import { ChannelHealthController } from './channel-health.controller';
 import { FaceMatchCacheService } from './face-match-cache.service';
 import { VideoIngestionService } from './video-ingestion.service';
 
 @Module({
-  imports: [RecognitionModule, ConfigurationModule, AlertModule, MediaServerModule],
+  imports: [RecognitionModule, ConfigurationModule, AlertModule, MediaServerModule, SystemLogModule],
   controllers: [ChannelHealthController],
   providers: [VideoIngestionService, AlertPipelineService, FaceMatchCacheService],
   // Both are re-synced on demand rather than polled — see SystemController's /system/reload,

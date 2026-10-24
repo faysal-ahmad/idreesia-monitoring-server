@@ -94,3 +94,29 @@ export interface ChannelHealth {
   status: ChannelHealthStatus;
   lastFrameAt: string | null;
 }
+
+export type SystemLogEvent =
+  | 'CHANNEL_CREATED'
+  | 'CHANNEL_UPDATED'
+  | 'CHANNEL_DELETED'
+  | 'CHANNEL_ENABLED'
+  | 'CHANNEL_DISABLED';
+
+// ADMIN = done through the UI; SYSTEM = done by the server on its own.
+export type SystemLogSource = 'ADMIN' | 'SYSTEM';
+
+export interface SystemLog {
+  id: string;
+  timestamp: string;
+  event: SystemLogEvent;
+  source: SystemLogSource;
+  // The channel's id and name at the time; kept even after the channel is deleted.
+  channelId: string | null;
+  channelName: string | null;
+  message: string;
+}
+
+export interface SystemLogPage {
+  data: SystemLog[];
+  total: number;
+}

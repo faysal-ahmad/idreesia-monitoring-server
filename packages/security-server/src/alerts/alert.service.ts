@@ -43,6 +43,7 @@ export class AlertService {
     const where: Prisma.AlertWhereInput = {
       monitoringProfileId: query.profileId,
       channelId: query.channelId,
+      timestamp: { gte: query.from, lte: query.to },
       ...(query.hideTestProfiles && { monitoringProfile: { isTest: false } }),
     };
     const [total, alerts] = await this.prisma.$transaction([

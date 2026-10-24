@@ -9,6 +9,7 @@ import { IngestionModule } from '../ingestion/ingestion.module';
 import { MonitoringProfileModule } from '../monitoring-profiles/monitoring-profile.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SystemModule } from '../system/system.module';
+import { SystemLogModule } from '../system-logs/system-log.module';
 import { VideoFeedSourceModule } from '../video-feed-sources/video-feed-source.module';
 import { AppService } from './app.service';
 
@@ -23,6 +24,7 @@ import { AppService } from './app.service';
     IngestionModule,
     SystemModule,
     ConfigurationModule,
+    SystemLogModule,
   ],
   providers: [AppService, { provide: APP_FILTER, useClass: PrismaExceptionFilter }],
 })
