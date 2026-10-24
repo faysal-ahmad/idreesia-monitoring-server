@@ -42,6 +42,12 @@ services:
         condition: service_started
     restart: unless-stopped
     environment:
+      # sslmode=disable: the postgres container has no TLS at all, and Prisma's query engine still
+      # attempts (and fails) a TLS handshake against bookworm's OpenSSL 3 unless told not to.
+      DATABASE_URL: "postgresql://idreesia:idreesia@postgres:5432/idreesia?schema=security_server&sslmode=disable"
+      # Read RTSP over TCP in OpenCV's FFmpeg backend — over UDP, lost RTP packets make reads
+      # silently return empty frames.
+      OPENCV_FFMPEG_CAPTURE_OPTIONS: "rtsp_transport;tcp"
       # Password for the admin pages (everything except Alerts). Change it before deploying.
       ADMIN_PASSWORD: change-me
     volumes:
