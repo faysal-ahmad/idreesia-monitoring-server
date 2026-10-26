@@ -46,7 +46,7 @@ export class MediaServerService {
 
   @Interval(RESYNC_INTERVAL_MS)
   async syncEnabledChannels(): Promise<boolean> {
-    return this.sync(await this.prisma.videoFeedSource.findMany({ where: { enabled: true } }));
+    return this.sync(await this.prisma.videoFeedSource.findMany({ where: { enabled: true, deletedAt: null } }));
   }
 
   // For callers that just hit a missing/unreachable re-stream (e.g. go2rtc restarted).

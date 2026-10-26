@@ -54,15 +54,12 @@ export type ImageUploadResult =
   | { status: 'warning'; reason: string; faceBox: { width: number; height: number }; confidence: number }
   | { status: 'created'; image: { id: string; createdAt: string } };
 
-export type AlertReview = 'CORRECT' | 'FALSE_POSITIVE';
-
 export interface Alert {
   id: string;
   // <uuid>.jpg, served from /api/alert-images/<imageFile>.
   imageFile: string;
   timestamp: string;
   similarityScore: number;
-  review: AlertReview | null;
   profile: { id: string; name: string; isTest: boolean };
   channel: { id: string; name: string };
 }
@@ -80,6 +77,8 @@ export interface AlertFilterOptions {
 export interface Configuration {
   alertsRetentionDays: number;
   includeTestProfilesInAlerts: boolean;
+  erpSyncIntervalMinutes: number;
+  erpAlertRetryIntervalMinutes: number;
 }
 
 export interface AuthSession {
@@ -95,28 +94,22 @@ export interface ChannelHealth {
   lastFrameAt: string | null;
 }
 
-export type SystemLogEvent =
-  | 'CHANNEL_CREATED'
-  | 'CHANNEL_UPDATED'
-  | 'CHANNEL_DELETED'
-  | 'CHANNEL_ENABLED'
-  | 'CHANNEL_DISABLED';
-
-// ADMIN = done through the UI; SYSTEM = done by the server on its own.
-export type SystemLogSource = 'ADMIN' | 'SYSTEM';
-
-export interface SystemLog {
-  id: string;
-  timestamp: string;
-  event: SystemLogEvent;
-  source: SystemLogSource;
-  // The channel's id and name at the time; kept even after the channel is deleted.
-  channelId: string | null;
-  channelName: string | null;
-  message: string;
+export interface ErpStatus {
+  // false when ERP_URL / ERP_USERNAME / ERP_PASSWORD aren't set on the server.
+  configured: boolean;
+  lastSyncedAt: string | null;
+  lastSyncError: string | null;
+  pendingAlerts: number;
+  lastPushError: string | null;
 }
 
-export interface SystemLogPage {
-  data: SystemLog[];
-  total: number;
+export interface ErpSyncSummary {
+  // Applied here from the ERP.
+  pulled: { channels: number; profiles: number; photos: number };
+  // ERP changes not applied because the record had also changed here (this server's version wins).
+  conflicts: number;
+  // Sent to the ERP.
+  pushed: { channels: number; profiles: number };
+  // Deleted, but kept until their alerts reach the ERP.
+  deferred: number;
 }

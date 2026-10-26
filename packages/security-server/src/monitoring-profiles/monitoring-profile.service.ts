@@ -18,12 +18,19 @@ const CONFIDENT_SCORE_THRESHOLD = 0.9;
 const HARD_REJECT_MIN_PX = 40;
 // Below this (but above the hard-reject floor), quality is marginal — warn, don't block.
 const WARN_MIN_PX = 80;
+// For photos synced from the ERP, which were checked when they were uploaded there: any face it
+// can find at all is used.
+const SYNCED_DETECTION_SCORE_THRESHOLD = 0.3;
 
 export type ImageUploadResult =
   | { status: 'rejected'; reason: string }
   | { status: 'warning'; reason: string; faceBox: { width: number; height: number }; confidence: number }
   | { status: 'created'; image: { id: string; createdAt: Date } };
 
+const ACTIVE = { deletedAt: null };
+
+// Profiles are edited here and in the ERP; ErpSyncService keeps the two in step. A delete keeps
+// the row (deletedAt) until the ERP has been told, so every read here skips deleted ones.
 @Injectable()
 export class MonitoringProfileService {
   constructor(
@@ -36,8 +43,9 @@ export class MonitoringProfileService {
 
   async list() {
     const profiles = await this.prisma.monitoringProfile.findMany({
+      where: ACTIVE,
       include: { _count: { select: { images: true, alerts: true } } },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { name: 'asc' },
     });
     return profiles.map((profile) => {
       const { _count, ...rest } = profile;
@@ -46,8 +54,8 @@ export class MonitoringProfileService {
   }
 
   async findOne(id: string) {
-    const profile = await this.prisma.monitoringProfile.findUnique({
-      where: { id },
+    const profile = await this.prisma.monitoringProfile.findFirst({
+      where: { id, ...ACTIVE },
       include: { images: { select: { id: true, createdAt: true } } },
     });
     if (!profile) throw new NotFoundException('Monitoring profile not found.');
@@ -85,9 +93,14 @@ export class MonitoringProfileService {
   }
 
   async remove(id: string) {
-    await this.ensureExists(id);
-    // Cascades to MonitoringProfileImage and Alert rows per the schema's onDelete: Cascade — the
-    // alerts' image files aren't in the DB, so they're collected first and removed afterwards.
+    const profile = await this.ensureExists(id);
+    if (profile.externalId) {
+      // Kept until the next sync tells the ERP.
+      await this.prisma.monitoringProfile.update({ where: { id }, data: { deletedAt: new Date() } });
+      return;
+    }
+    // Never reached the ERP, so there's nothing to tell it: removed now. Cascades to its images
+    // and alerts — the alerts' image files aren't in the DB, so they're collected first.
     const alerts = await this.prisma.alert.findMany({ where: { monitoringProfileId: id }, select: { imageFile: true } });
     await this.prisma.monitoringProfile.delete({ where: { id } });
     await this.alertImages.remove(alerts.map((alert) => alert.imageFile));
@@ -125,15 +138,11 @@ export class MonitoringProfileService {
     }
 
     const aligned = this.faceRecognition.align(decoded, face.landmarks);
-    const embedding = this.faceRecognition.embed(aligned);
-    const jpeg = cv.imencode('.jpg', decoded);
-
-    const id = randomUUID();
-    const embeddingSql = vectorToSql(embedding);
-    await this.prisma.$executeRaw`
-      INSERT INTO security_server."MonitoringProfileImage" (id, "profileId", image, embedding, "embeddingModelVersion", "createdAt")
-      VALUES (${id}, ${profileId}, ${jpeg}, ${embeddingSql}::vector, ${EMBEDDING_MODEL_VERSION}, now())
-    `;
+    const id = await this.insertImage(profileId, {
+      embedding: this.faceRecognition.embed(aligned),
+      jpeg: cv.imencode('.jpg', decoded),
+    });
+    await this.touch(profileId);
 
     const [created] = await this.prisma.$queryRaw<{ id: string; createdAt: Date }[]>`
       SELECT id, "createdAt" FROM security_server."MonitoringProfileImage" WHERE id = ${id}
@@ -149,10 +158,42 @@ export class MonitoringProfileService {
     if (deleted.count === 0) {
       throw new NotFoundException('Image not found for this profile.');
     }
+    await this.touch(profileId);
+  }
+
+  // Embeds a photo synced from the ERP, with none of the upload checks above (the ERP checked it):
+  // the most confident face found is used. null if there's no face at all.
+  computeSyncedImageEmbedding(fileBuffer: Buffer): { embedding: number[]; jpeg: Buffer } | null {
+    const decoded = cv.imdecode(fileBuffer);
+    const faces = this.faceDetection.detect(decoded, SYNCED_DETECTION_SCORE_THRESHOLD);
+    if (faces.length === 0) return null;
+    const face = faces.reduce((best, current) => (current.confidence > best.confidence ? current : best));
+    const aligned = this.faceRecognition.align(decoded, face.landmarks);
+    return { embedding: this.faceRecognition.embed(aligned), jpeg: cv.imencode('.jpg', decoded) };
+  }
+
+  // embedding null: a synced photo with no face found (see computeSyncedImageEmbedding).
+  async insertImage(
+    profileId: string,
+    { embedding, jpeg }: { embedding: number[] | null; jpeg: Uint8Array },
+    externalId: string | null = null,
+  ): Promise<string> {
+    const id = randomUUID();
+    const embeddingSql = embedding ? vectorToSql(embedding) : null;
+    await this.prisma.$executeRaw`
+      INSERT INTO security_server."MonitoringProfileImage" (id, "externalId", "profileId", image, embedding, "embeddingModelVersion", "createdAt")
+      VALUES (${id}, ${externalId}, ${profileId}, ${jpeg}, ${embeddingSql}::vector, ${EMBEDDING_MODEL_VERSION}, now())
+    `;
+    return id;
+  }
+
+  // A photo change is a change to its profile as far as the ERP sync is concerned.
+  private async touch(profileId: string) {
+    await this.prisma.monitoringProfile.update({ where: { id: profileId }, data: { updatedAt: new Date() } });
   }
 
   private async ensureExists(id: string) {
-    const profile = await this.prisma.monitoringProfile.findUnique({ where: { id } });
+    const profile = await this.prisma.monitoringProfile.findFirst({ where: { id, ...ACTIVE } });
     if (!profile) throw new NotFoundException('Monitoring profile not found.');
     return profile;
   }

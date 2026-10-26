@@ -4,6 +4,8 @@ import { Configuration } from './types';
 export interface UpdateConfigurationInput {
   alertsRetentionDays?: number;
   includeTestProfilesInAlerts?: boolean;
+  erpSyncIntervalMinutes?: number;
+  erpAlertRetryIntervalMinutes?: number;
 }
 
 export const configurationApi = {

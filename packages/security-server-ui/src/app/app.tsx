@@ -1,7 +1,6 @@
 import {
   AlertOutlined,
   CameraOutlined,
-  FileTextOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -18,7 +17,6 @@ import AlertsPage from '../pages/alerts-page';
 import ChannelsPage from '../pages/channels-page';
 import ConfigurationPage from '../pages/configuration-page';
 import MonitoringProfilesPage from '../pages/monitoring-profiles-page';
-import SystemLogsPage from '../pages/system-logs-page';
 
 const { Header, Sider, Content } = Layout;
 
@@ -36,7 +34,6 @@ const ADMIN_NAV_ITEMS = [
     label: <Link to="/admin/monitoring-profiles">Monitoring Profiles</Link>,
   },
   { key: '/admin/configuration', icon: <SettingOutlined />, label: <Link to="/admin/configuration">Configuration</Link> },
-  { key: '/admin/system-logs', icon: <FileTextOutlined />, label: <Link to="/admin/system-logs">System Logs</Link> },
 ];
 
 export function App() {
@@ -119,7 +116,6 @@ export function App() {
                 <Route path="channels" element={<ChannelsPage />} />
                 <Route path="monitoring-profiles" element={<MonitoringProfilesPage />} />
                 <Route path="configuration" element={<ConfigurationPage />} />
-                <Route path="system-logs" element={<SystemLogsPage />} />
               </Route>
               <Route path="*" element={<Navigate to="/alerts" replace />} />
             </Routes>

@@ -1,12 +1,10 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { AlertReview } from '@prisma/client';
 import { Observable, Subject } from 'rxjs';
 import type { AlertListItem } from './alert.service';
 
 export type AlertEvent =
   | { type: 'created'; alert: AlertListItem }
-  | { type: 'reviewed'; id: string; review: AlertReview | null }
-  // Bulk deletes (retention purge, a profile deleted with its alerts) — clients refetch the list
+  // Bulk deletes (retention purge, the ERP sync removing a profile or channel with its alerts) — clients refetch the list
   // rather than being sent every removed id.
   | { type: 'resync' };
 

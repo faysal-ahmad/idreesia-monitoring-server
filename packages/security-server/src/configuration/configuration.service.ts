@@ -1,10 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { Observable, Subject } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { CONFIG_DEFINITIONS, ConfigKey, ConfigValues, UpdateConfigurationDto } from './configuration.schema';
 
 @Injectable()
 export class ConfigurationService {
+  private readonly changes = new Subject<ConfigValues>();
+  // Emits the full settings after every update, for services that schedule work by a setting.
+  readonly changes$: Observable<ConfigValues> = this.changes.asObservable();
+
   constructor(private readonly prisma: PrismaService) {}
 
   // Missing rows (e.g. a setting added after this DB was seeded) fall back to their
@@ -31,6 +36,8 @@ export class ConfigurationService {
         }),
       ),
     );
-    return this.getAll();
+    const values = await this.getAll();
+    this.changes.next(values);
+    return values;
   }
 }

@@ -27,6 +27,20 @@ export const CONFIG_DEFINITIONS = {
     default: false,
     schema: z.boolean(),
   }),
+  // How often channel and profile changes are pulled from the ERP in the background. The Sync
+  // buttons on the Channels and Profiles pages pull straight away.
+  erpSyncIntervalMinutes: defineConfig({
+    displayName: 'ERP Sync Interval (minutes)',
+    default: 5,
+    schema: z.number().int().min(1),
+  }),
+  // How often alerts the ERP hasn't received yet are retried. New alerts are sent as soon as
+  // they're raised; this only paces the retries while the ERP is unreachable.
+  erpAlertRetryIntervalMinutes: defineConfig({
+    displayName: 'ERP Alert Retry Interval (minutes)',
+    default: 1,
+    schema: z.number().int().min(1),
+  }),
 };
 
 export type ConfigKey = keyof typeof CONFIG_DEFINITIONS;

@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, ReadStream } from 'node:fs';
-import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const DEFAULT_ALERT_IMAGES_DIR = '/data/alert-images';
@@ -39,6 +39,16 @@ export class AlertImageStorageService implements OnModuleInit {
       return null;
     }
     return createReadStream(filePath);
+  }
+
+  // The whole file, for sending to the ERP. null for an invalid name or a missing file.
+  async read(fileName: string): Promise<Buffer | null> {
+    if (!FILE_NAME_PATTERN.test(fileName)) return null;
+    try {
+      return await readFile(join(this.dir, fileName));
+    } catch {
+      return null;
+    }
   }
 
   // Best effort: a file that can't be removed is only logged, so it never fails the deletion of

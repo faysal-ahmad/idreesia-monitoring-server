@@ -1,16 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AlertEventsService } from './alert-events.service';
 import { AlertImageStorageService } from './alert-image-storage.service';
-import { ListAlertsQuery, ReviewAlertDto } from './alert.schema';
+import { ListAlertsQuery } from './alert.schema';
 
 const ALERT_LIST_SELECT = {
   id: true,
   imageFile: true,
   timestamp: true,
   similarityScore: true,
-  review: true,
   monitoringProfile: { select: { id: true, name: true, isTest: true } },
   channel: { select: { id: true, name: true } },
 } satisfies Prisma.AlertSelect;
@@ -21,7 +20,6 @@ function toListItem(alert: Prisma.AlertGetPayload<{ select: typeof ALERT_LIST_SE
     imageFile: alert.imageFile,
     timestamp: alert.timestamp,
     similarityScore: alert.similarityScore,
-    review: alert.review,
     profile: alert.monitoringProfile,
     channel: alert.channel,
   };
@@ -90,14 +88,4 @@ export class AlertService {
     this.events.emit({ type: 'created', alert });
     return alert;
   }
-
-  async review(id: string, dto: ReviewAlertDto) {
-    const { count } = await this.prisma.alert.updateMany({
-      where: { id },
-      data: { review: dto.review, reviewedAt: dto.review ? new Date() : null },
-    });
-    if (count === 0) throw new NotFoundException('Alert not found.');
-    this.events.emit({ type: 'reviewed', id, review: dto.review });
-  }
-
 }

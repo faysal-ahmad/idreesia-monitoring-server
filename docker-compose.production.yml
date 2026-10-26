@@ -50,6 +50,11 @@ services:
       OPENCV_FFMPEG_CAPTURE_OPTIONS: "rtsp_transport;tcp"
       # Password for the admin pages (everything except Alerts). Change it before deploying.
       ADMIN_PASSWORD: change-me
+      # The ERP, which owns channels and profiles and receives alerts, and the ERP service account
+      # (holding only the "Sync Security Server Data" permission) this server logs in as.
+      ERP_URL: https://erp.example.org
+      ERP_USERNAME: security-server
+      ERP_PASSWORD: change-me
     volumes:
       # Alert frame images (see ALERT_IMAGES_DIR) on a folder on the host machine. The server runs as
       # UID 1001 (see Dockerfile.production), so that folder must be writable by UID 1001.

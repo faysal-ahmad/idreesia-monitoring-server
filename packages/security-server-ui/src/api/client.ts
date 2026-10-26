@@ -9,10 +9,11 @@ export class ApiError extends Error {
   }
 }
 
-// The server never polls the database on its own schedule for channel/profile/image/config changes —
-// it expects the UI to say when something it needs to reload has changed. Rather than remembering
-// to call /system/reload from every mutation's call site, every non-GET request to a
-// reload-relevant path triggers it here, once, right after the mutation succeeds.
+// The server never polls the database on its own schedule for channel/profile/image/config changes
+// made here — it expects the UI to say when something it needs to reload has changed. Rather than
+// remembering to call /system/reload from every mutation's call site, every non-GET request to a
+// reload-relevant path triggers it here, once, right after the mutation succeeds. (Changes from
+// the ERP sync reload on the server by themselves.)
 function isReloadRelevant(method: string, path: string): boolean {
   if (method === 'GET' || path === '/system/reload') return false;
   if (path.endsWith('/verify') || path.endsWith('/test-match')) return false;

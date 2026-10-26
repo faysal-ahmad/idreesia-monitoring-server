@@ -129,7 +129,7 @@ export default function MonitoringProfilesPage() {
           </Tooltip>
           <Popconfirm
             title="Delete this profile?"
-            description="This also deletes its photos and alert history."
+            description="This also deletes its photos, here and in the ERP. Its alerts stay in the ERP."
             onConfirm={() => removeMutation.mutate(record.id)}
           >
             <Tooltip title="Delete">

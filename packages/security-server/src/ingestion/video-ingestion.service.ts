@@ -3,7 +3,6 @@ import { VideoFeedSource } from '@prisma/client';
 import * as cv from '@u4/opencv4nodejs';
 import { MediaServerService } from '../media-server/media-server.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { SystemLogService } from '../system-logs/system-log.service';
 import { AlertPipelineService } from './alert-pipeline.service';
 
 // Frames are always read (to stay near-live and drain the stream buffer), but only handed off
@@ -67,9 +66,9 @@ function configsEqual(a: unknown, b: unknown): boolean {
 
 // Manages one continuous read loop per enabled channel, reading the channel's re-stream from the
 // go2rtc media server (see MediaServerService) rather than the camera itself. There's no periodic DB polling here —
-// channel create/update/delete all happen through the UI, so `reconcile()` only runs once at
-// startup and whenever the /system/reload endpoint is called (see SystemController), which the
-// UI hits right after any channel mutation. Uses VideoCapture's async API (readAsync) throughout
+// channels change only through the UI and the ERP sync, so `reconcile()` only runs once at
+// startup, after the sync applies changes, and whenever the /system/reload endpoint is called (see
+// SystemController), which the UI hits right after any channel mutation. Uses VideoCapture's async API (readAsync) throughout
 // — the sync API blocks the whole Node event loop per frame, which is fine for the one-shot
 // verify/test-match actions elsewhere but not for a long-running loop running alongside the API.
 @Injectable()
@@ -85,7 +84,6 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly mediaServer: MediaServerService,
     private readonly alertPipeline: AlertPipelineService,
-    private readonly systemLog: SystemLogService,
   ) {}
 
   async onModuleInit() {
@@ -98,7 +96,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
 
   async reconcile() {
     const seqAtRead = this.disableSeq;
-    const enabledChannels = await this.prisma.videoFeedSource.findMany({ where: { enabled: true } });
+    const enabledChannels = await this.prisma.videoFeedSource.findMany({ where: { enabled: true, deletedAt: null } });
     const enabledById = new Map(enabledChannels.map((channel) => [channel.id, channel]));
     // Streams first, so loops (re)opening below find them. If go2rtc is unreachable, loops just
     // keep retrying and the periodic resync adds the streams once it's back.
@@ -258,19 +256,8 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     loop.stopped = true;
     let disabled = false;
     try {
-      // A SYSTEM entry, so the log tells this apart from an admin disabling the channel.
-      await this.prisma.$transaction(async (tx) => {
-        await tx.videoFeedSource.update({ where: { id: channel.id }, data: { enabled: false } });
-        await this.systemLog.record(
-          {
-            event: 'CHANNEL_DISABLED',
-            source: 'SYSTEM',
-            channel,
-            message: `Disabled automatically: camera unreachable after ${loop.reconnectAttempts} attempts (${reason})`,
-          },
-          tx,
-        );
-      });
+      // A change here like any other, so the next sync passes it on to the ERP.
+      await this.prisma.videoFeedSource.update({ where: { id: channel.id }, data: { enabled: false } });
       disabled = true;
     } catch (error) {
       // Still stop the loop. The channel stays enabled in the DB, so it's retried on the next

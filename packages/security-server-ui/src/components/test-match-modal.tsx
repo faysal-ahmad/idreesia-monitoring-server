@@ -60,7 +60,7 @@ export function TestMatchModal({ open, channel, onClose, onThresholdSaved }: Tes
         Point this channel at someone enrolled as a <Text strong>test profile</Text>, then capture a frame to see the
         computed similarity score. This does not trigger an alert.
       </Paragraph>
-      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+      <Space orientation="vertical" style={{ width: '100%' }} size="middle">
         <Button type="primary" loading={running} onClick={runCapture}>
           Capture &amp; Score
         </Button>

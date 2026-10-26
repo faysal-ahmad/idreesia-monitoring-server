@@ -23,7 +23,8 @@ export class AlertRetentionService {
     const { alertsRetentionDays } = await this.configuration.getAll();
     const cutoff = new Date(Date.now() - alertsRetentionDays * MS_PER_DAY);
 
-    const where = { timestamp: { lt: cutoff } };
+    // Alerts not yet delivered to the ERP are kept until they are, however old.
+    const where = { timestamp: { lt: cutoff }, erpSyncStatus: 'SENT' as const };
     // Only rows already past the cutoff match, so nothing new can slip in between these two queries.
     const expired = await this.prisma.alert.findMany({ where, select: { imageFile: true } });
     const { count } = await this.prisma.alert.deleteMany({ where });

@@ -1,8 +1,4 @@
-import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  MutedOutlined,
-} from '@ant-design/icons';
+import { MutedOutlined } from '@ant-design/icons';
 import {
   keepPreviousData,
   useQuery,
@@ -22,7 +18,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { alertsApi } from '../api/alerts';
-import { Alert, AlertPage } from '../api/types';
+import { Alert } from '../api/types';
 import { AlertImagesModal } from '../components/alert-images-modal';
 import ChannelHealthSummary from '../components/channel-health-summary';
 import AlertsListFilter, {
@@ -136,7 +132,7 @@ export default function AlertsPage() {
 
   const [now, setNow] = useState(() => Date.now());
   // A snapshot rather than an id, so the dialog stays open even if a refetch moves the alert off
-  // the current page; the on-page copy is preferred while it's there (it has the latest review).
+  // the current page; the on-page copy is preferred while it's there.
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const shownAlert = selectedAlert
     ? (alertPage?.data.find((alert) => alert.id === selectedAlert.id) ??
@@ -207,25 +203,6 @@ export default function AlertsPage() {
         });
       }
     });
-    source.addEventListener('reviewed', (event) => {
-      const { id, review } = JSON.parse(event.data) as Pick<
-        Alert,
-        'id' | 'review'
-      >;
-      queryClient.setQueriesData<AlertPage>(
-        { queryKey: ['alerts', 'page'] },
-        (current) =>
-          current && {
-            ...current,
-            data: current.data.map((alert) =>
-              alert.id === id ? { ...alert, review } : alert,
-            ),
-          },
-      );
-      setSelectedAlert((current) =>
-        current?.id === id ? { ...current, review } : current,
-      );
-    });
     source.addEventListener('resync', resync);
 
     return () => source.close();
@@ -274,7 +251,7 @@ export default function AlertsPage() {
           showIcon
           icon={<MutedOutlined />}
           style={{ marginBottom: 16 }}
-          message="Click anywhere on the page to enable sound alerts."
+          title="Click anywhere on the page to enable sound alerts."
         />
       )}
       <div className="list-table-header" style={{ marginBottom: 16 }}>
@@ -296,7 +273,7 @@ export default function AlertsPage() {
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          message={`${newAlertCount} new alert${newAlertCount === 1 ? '' : 's'} since this page loaded.`}
+          title={`${newAlertCount} new alert${newAlertCount === 1 ? '' : 's'} since this page loaded.`}
           action={
             <Button size="small" type="primary" onClick={() => setPage(1)}>
               Go to latest
@@ -384,20 +361,6 @@ export default function AlertsPage() {
               dataIndex: 'timestamp',
               render: (timestamp: string) =>
                 new Date(timestamp).toLocaleString(),
-            },
-            {
-              title: 'Review',
-              dataIndex: 'review',
-              render: (review: Alert['review']) =>
-                review === 'CORRECT' ? (
-                  <Tag color="success" icon={<CheckCircleOutlined />}>
-                    Correct
-                  </Tag>
-                ) : review === 'FALSE_POSITIVE' ? (
-                  <Tag color="error" icon={<CloseCircleOutlined />}>
-                    False positive
-                  </Tag>
-                ) : null,
             },
           ]}
           locale={{ emptyText: 'No alerts yet.' }}

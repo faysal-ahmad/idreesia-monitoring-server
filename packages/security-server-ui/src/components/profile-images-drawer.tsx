@@ -67,8 +67,8 @@ export function ProfileImagesDrawer({ profileId, onClose }: ProfileImagesDrawerP
   };
 
   return (
-    <Drawer title={profile ? `Photos — ${profile.name}` : 'Photos'} open={!!profileId} onClose={onClose} width={480}>
-      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+    <Drawer title={profile ? `Photos — ${profile.name}` : 'Photos'} open={!!profileId} onClose={onClose} size={480}>
+      <Space orientation="vertical" style={{ width: '100%' }} size="middle">
         <Upload.Dragger {...uploadProps}>
           <p className="ant-upload-drag-icon">
             <InboxOutlined />

@@ -44,7 +44,9 @@ export class FaceMatchCacheService implements OnModuleInit {
       SELECT mpi."profileId" as "profileId", mp.name as "profileName", mpi.embedding::text as embedding
       FROM security_server."MonitoringProfileImage" mpi
       JOIN security_server."MonitoringProfile" mp ON mp.id = mpi."profileId"
-      WHERE mp."isTest" = false OR ${includeTestProfilesInAlerts}
+      WHERE mp."deletedAt" IS NULL
+        AND mpi.embedding IS NOT NULL
+        AND (mp."isTest" = false OR ${includeTestProfilesInAlerts})
     `;
     this.cache = rows.map((row) => ({
       profileId: row.profileId,

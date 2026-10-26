@@ -1,5 +1,5 @@
 import { api } from './client';
-import { AlertFilterOptions, AlertPage, AlertReview } from './types';
+import { AlertFilterOptions, AlertPage } from './types';
 
 export interface ListAlertsParams {
   page: number;
@@ -37,6 +37,4 @@ export const alertsApi = {
   list: (params: ListAlertsParams) =>
     api.get<AlertPage>(`/alerts?${toQueryString(params)}`),
   filterOptions: () => api.get<AlertFilterOptions>('/alerts/filter-options'),
-  review: (id: string, review: AlertReview | null) =>
-    api.patch<void>(`/alerts/${id}/review`, { review }),
 };

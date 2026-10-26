@@ -10,5 +10,7 @@ import { MonitoringProfileService } from './monitoring-profile.service';
   imports: [RecognitionModule, IngestionModule, AlertModule],
   controllers: [MonitoringProfileController],
   providers: [MonitoringProfileService, EmbeddingBackfillService],
+  // For the ERP sync, which embeds and stores the photos it pulls down.
+  exports: [MonitoringProfileService],
 })
 export class MonitoringProfileModule {}

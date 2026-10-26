@@ -34,6 +34,11 @@ services:
       OPENCV_FFMPEG_CAPTURE_OPTIONS: "rtsp_transport;tcp"
       # Password for the admin pages (everything except Alerts).
       ADMIN_PASSWORD: admin
+      # The ERP (idreesia-erp's dev stack on the host), which owns channels and profiles and
+      # receives alerts, and the ERP service account with the "Sync Security Server Data" permission.
+      ERP_URL: http://host.docker.internal:3000
+      ERP_USERNAME: security-server
+      ERP_PASSWORD: security-server
       # Nx's workspace data otherwise lives in the bind-mounted repo's .nx/, shared with the UI
       # container and surviving restarts. Its running-tasks table is keyed by PID, and a restarted
       # container's `nx serve` gets the same PID again, so it finds its own stale entry and waits

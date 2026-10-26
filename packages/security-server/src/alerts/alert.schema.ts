@@ -1,11 +1,5 @@
 import { z } from 'zod';
 
-// null clears a previous review.
-export const ReviewAlertSchema = z.object({
-  review: z.enum(['CORRECT', 'FALSE_POSITIVE']).nullable(),
-});
-export type ReviewAlertDto = z.infer<typeof ReviewAlertSchema>;
-
 // Query-string params arrive as strings, hence the coercion.
 export const ListAlertsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

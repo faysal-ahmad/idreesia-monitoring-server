@@ -1,13 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, Form, InputNumber, Switch, Typography } from 'antd';
+import { App, Button, Flex, Form, InputNumber, Switch, Typography } from 'antd';
 import { useEffect } from 'react';
 import { configurationApi } from '../api/configuration';
+import {
+  ErpAlertDeliveryStatus,
+  ErpSyncStatus,
+} from '../components/erp-status';
+import { ErpSyncNowButton } from '../components/erp-sync-now-button';
 
 const { Title } = Typography;
 
 interface ConfigurationFormValues {
   alertsRetentionDays: number;
   includeTestProfilesInAlerts: boolean;
+  erpSyncIntervalMinutes: number;
+  erpAlertRetryIntervalMinutes: number;
 }
 
 export default function ConfigurationPage() {
@@ -25,6 +32,9 @@ export default function ConfigurationPage() {
       form.setFieldsValue({
         alertsRetentionDays: configuration.alertsRetentionDays,
         includeTestProfilesInAlerts: configuration.includeTestProfilesInAlerts,
+        erpSyncIntervalMinutes: configuration.erpSyncIntervalMinutes,
+        erpAlertRetryIntervalMinutes:
+          configuration.erpAlertRetryIntervalMinutes,
       });
     }
   }, [configuration, form]);
@@ -68,6 +78,42 @@ export default function ConfigurationPage() {
           extra="When on, test profiles are matched by the live cameras and raise alerts like real profiles. Their alerts are tagged as tests."
         >
           <Switch />
+        </Form.Item>
+        <Form.Item
+          label="ERP Sync Interval (minutes)"
+          required
+          extra={
+            <>
+              How often channels and profiles are synced with the ERP, both
+              ways, in the background. Sync now runs it straight away.
+              <ErpSyncStatus />
+            </>
+          }
+        >
+          <Flex gap={8}>
+            <Form.Item
+              name="erpSyncIntervalMinutes"
+              noStyle
+              rules={[{ required: true, message: 'Sync interval is required' }]}
+            >
+              <InputNumber min={1} precision={0} style={{ flex: 1 }} />
+            </Form.Item>
+            <ErpSyncNowButton />
+          </Flex>
+        </Form.Item>
+        <Form.Item
+          name="erpAlertRetryIntervalMinutes"
+          label="ERP Alert Retry Interval (minutes)"
+          rules={[{ required: true, message: 'Retry interval is required' }]}
+          extra={
+            <>
+              Alerts are sent to the ERP as soon as they're raised. If the ERP
+              can't be reached, they're retried this often until it can.
+              <ErpAlertDeliveryStatus />
+            </>
+          }
+        >
+          <InputNumber min={1} precision={0} style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item wrapperCol={{ offset: 10, span: 14 }}>
           <Button

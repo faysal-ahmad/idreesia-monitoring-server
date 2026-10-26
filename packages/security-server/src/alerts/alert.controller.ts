@@ -1,24 +1,14 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  MessageEvent,
-  Param,
-  Patch,
-  Query,
-  Sse,
-} from '@nestjs/common';
+import { Controller, Get, MessageEvent, Query, Sse } from '@nestjs/common';
 import { interval, map, merge, Observable, takeUntil } from 'rxjs';
 import { Public } from '../auth/public.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AlertEventsService } from './alert-events.service';
-import { ListAlertsQuerySchema, ReviewAlertSchema } from './alert.schema';
+import { ListAlertsQuerySchema } from './alert.schema';
 import { AlertService } from './alert.service';
 
 const HEARTBEAT_MS = 30_000;
 
-// Public, reviews included: the Alerts page is open to everyone, not just admins.
+// Public: the Alerts page is open to everyone, not just admins.
 @Public()
 @Controller('alerts')
 export class AlertController {
@@ -46,14 +36,5 @@ export class AlertController {
       this.events.events$.pipe(map(({ type, ...data }) => ({ type, data }))),
       interval(HEARTBEAT_MS).pipe(map(() => ({ comment: 'heartbeat' }))),
     ).pipe(takeUntil(this.events.shutdown$));
-  }
-
-  @Patch(':id/review')
-  @HttpCode(204)
-  review(
-    @Param('id') id: string,
-    @Body(new ZodValidationPipe(ReviewAlertSchema)) dto: ReturnType<typeof ReviewAlertSchema.parse>,
-  ) {
-    return this.service.review(id, dto);
   }
 }
