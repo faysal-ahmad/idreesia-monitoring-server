@@ -343,7 +343,7 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       if (!embedded) {
         this.logger.warn(`No face found in photo ${erpImageId} of "${profile.name}"; it won't be used for matching`);
       }
-      return await this.profiles.insertImage(profile.id, embedded ?? { embedding: null, jpeg }, erpImageId);
+      return await this.profiles.insertImage(profile.id, embedded ?? { embedding: null, jpeg, quality: null }, erpImageId);
     } catch (error) {
       // Not stored, so the ERP still lists it next time; retried then.
       this.logger.warn(`Could not download photo ${erpImageId} of "${profile.name}": ${error}`);

@@ -25,4 +25,6 @@ export const monitoringProfilesApi = {
     return api.postForm<ImageUploadResult>(`/monitoring-profiles/${id}/images`, formData);
   },
   removeImage: (id: string, imageId: string) => api.delete<void>(`/monitoring-profiles/${id}/images/${imageId}`),
+  recalculateQuality: (id: string) =>
+    api.post<{ recalculated: number; notRated: number }>(`/monitoring-profiles/${id}/images/recalculate-quality`),
 };

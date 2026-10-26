@@ -39,10 +39,22 @@ export interface MonitoringProfileSummary {
   alertCount: number;
 }
 
+export type FaceQualitySignal = 'size' | 'confidence' | 'sharpness' | 'exposure' | 'pose';
+
+export interface FaceQuality {
+  // 0-100.
+  score: number;
+  // Each 0-1, where 1 is ideal.
+  signals: Record<FaceQualitySignal, number>;
+  reasons: string[];
+}
+
 export interface MonitoringProfileImage {
   id: string;
   createdAt: string;
   previewImage: string;
+  // null = no face found, or not scored yet.
+  quality: FaceQuality | null;
 }
 
 export interface MonitoringProfileDetail extends MonitoringProfileSummary {
@@ -52,7 +64,7 @@ export interface MonitoringProfileDetail extends MonitoringProfileSummary {
 export type ImageUploadResult =
   | { status: 'rejected'; reason: string }
   | { status: 'warning'; reason: string; faceBox: { width: number; height: number }; confidence: number }
-  | { status: 'created'; image: { id: string; createdAt: string } };
+  | { status: 'created'; image: { id: string; createdAt: string; quality: FaceQuality } };
 
 export interface Alert {
   id: string;

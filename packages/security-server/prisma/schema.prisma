@@ -75,6 +75,10 @@ model MonitoringProfileImage {
   // different versions aren't comparable; anything not on the current version is recomputed from
   // `image` at startup by EmbeddingBackfillService. null = produced before versioning existed.
   embeddingModelVersion String?
+  // A FaceQuality (see face-quality.service.ts): how usable the photo is for recognition. Shown to
+  // the admin only; it plays no part in matching and isn't sent to the ERP. null = no face found,
+  // or not scored yet (photos stored before scoring existed get it from "Recalculate quality").
+  quality               Json?
   createdAt             DateTime                   @default(now())
 
   @@schema("security_server")

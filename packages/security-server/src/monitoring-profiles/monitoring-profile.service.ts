@@ -6,6 +6,7 @@ import { AlertImageStorageService } from '../alerts/alert-image-storage.service'
 import { vectorToSql } from '../common/pgvector.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaceDetectionService } from '../recognition/face-detection.service';
+import { FaceQuality, FaceQualityService } from '../recognition/face-quality.service';
 import { EMBEDDING_MODEL_VERSION, FaceRecognitionService } from '../recognition/face-recognition.service';
 import { CreateMonitoringProfileDto, UpdateMonitoringProfileDto } from './monitoring-profile.schema';
 
@@ -25,9 +26,14 @@ const SYNCED_DETECTION_SCORE_THRESHOLD = 0.3;
 export type ImageUploadResult =
   | { status: 'rejected'; reason: string }
   | { status: 'warning'; reason: string; faceBox: { width: number; height: number }; confidence: number }
-  | { status: 'created'; image: { id: string; createdAt: Date } };
+  | { status: 'created'; image: { id: string; createdAt: Date; quality: FaceQuality } };
 
 const ACTIVE = { deletedAt: null };
+
+// Raw queries take the jsonb column as text; null stays SQL NULL rather than JSON 'null'.
+function qualityToSql(quality: FaceQuality | null): string | null {
+  return quality ? JSON.stringify(quality) : null;
+}
 
 // Profiles are edited here and in the ERP; ErpSyncService keeps the two in step. A delete keeps
 // the row (deletedAt) until the ERP has been told, so every read here skips deleted ones.
@@ -37,6 +43,7 @@ export class MonitoringProfileService {
     private readonly prisma: PrismaService,
     private readonly faceDetection: FaceDetectionService,
     private readonly faceRecognition: FaceRecognitionService,
+    private readonly faceQuality: FaceQualityService,
     private readonly alertEvents: AlertEventsService,
     private readonly alertImages: AlertImageStorageService,
   ) {}
@@ -62,12 +69,13 @@ export class MonitoringProfileService {
 
     const imagesWithPreview = await Promise.all(
       profile.images.map(async (image) => {
-        const [row] = await this.prisma.$queryRaw<{ image: Uint8Array }[]>`
-          SELECT image FROM security_server."MonitoringProfileImage" WHERE id = ${image.id}
+        const [row] = await this.prisma.$queryRaw<{ image: Uint8Array; quality: FaceQuality | null }[]>`
+          SELECT image, quality FROM security_server."MonitoringProfileImage" WHERE id = ${image.id}
         `;
         return {
           id: image.id,
           createdAt: image.createdAt,
+          quality: row.quality,
           // $queryRaw deserializes bytea columns as a plain Uint8Array (not a Buffer), whose
           // toString() ignores the 'base64' arg and dumps comma-joined byte values instead.
           previewImage: `data:image/jpeg;base64,${Buffer.from(row.image).toString('base64')}`,
@@ -138,16 +146,45 @@ export class MonitoringProfileService {
     }
 
     const aligned = this.faceRecognition.align(decoded, face.landmarks);
+    const quality = this.faceQuality.assess(face, aligned);
     const id = await this.insertImage(profileId, {
       embedding: this.faceRecognition.embed(aligned),
       jpeg: cv.imencode('.jpg', decoded),
+      quality,
     });
     await this.touch(profileId);
 
     const [created] = await this.prisma.$queryRaw<{ id: string; createdAt: Date }[]>`
       SELECT id, "createdAt" FROM security_server."MonitoringProfileImage" WHERE id = ${id}
     `;
-    return { status: 'created', image: created };
+    return { status: 'created', image: { ...created, quality } };
+  }
+
+  // Re-scores every photo of a profile - run by hand from the UI, both for photos stored before
+  // scoring existed and after the scoring constants are tuned. Only `quality` changes: not the
+  // embedding (so not matching) and not updatedAt (quality isn't synced to the ERP).
+  async recalculateQuality(profileId: string): Promise<{ recalculated: number; notRated: number }> {
+    await this.ensureExists(profileId);
+    const rows = await this.prisma.$queryRaw<{ id: string; image: Uint8Array }[]>`
+      SELECT id, image FROM security_server."MonitoringProfileImage" WHERE "profileId" = ${profileId}
+    `;
+
+    let notRated = 0;
+    for (const row of rows) {
+      const decoded = cv.imdecode(Buffer.from(row.image));
+      const faces = this.faceDetection.detect(decoded, DETECTION_SCORE_THRESHOLD);
+      let quality: FaceQuality | null = null;
+      if (faces.length > 0) {
+        const face = faces.reduce((best, current) => (current.confidence > best.confidence ? current : best));
+        quality = this.faceQuality.assess(face, this.faceRecognition.align(decoded, face.landmarks));
+      } else {
+        notRated++;
+      }
+      await this.prisma.$executeRaw`
+        UPDATE security_server."MonitoringProfileImage" SET quality = ${qualityToSql(quality)}::jsonb WHERE id = ${row.id}
+      `;
+    }
+    return { recalculated: rows.length - notRated, notRated };
   }
 
   async removeImage(profileId: string, imageId: string) {
@@ -163,26 +200,30 @@ export class MonitoringProfileService {
 
   // Embeds a photo synced from the ERP, with none of the upload checks above (the ERP checked it):
   // the most confident face found is used. null if there's no face at all.
-  computeSyncedImageEmbedding(fileBuffer: Buffer): { embedding: number[]; jpeg: Buffer } | null {
+  computeSyncedImageEmbedding(fileBuffer: Buffer): { embedding: number[]; jpeg: Buffer; quality: FaceQuality } | null {
     const decoded = cv.imdecode(fileBuffer);
     const faces = this.faceDetection.detect(decoded, SYNCED_DETECTION_SCORE_THRESHOLD);
     if (faces.length === 0) return null;
     const face = faces.reduce((best, current) => (current.confidence > best.confidence ? current : best));
     const aligned = this.faceRecognition.align(decoded, face.landmarks);
-    return { embedding: this.faceRecognition.embed(aligned), jpeg: cv.imencode('.jpg', decoded) };
+    return {
+      embedding: this.faceRecognition.embed(aligned),
+      jpeg: cv.imencode('.jpg', decoded),
+      quality: this.faceQuality.assess(face, aligned),
+    };
   }
 
-  // embedding null: a synced photo with no face found (see computeSyncedImageEmbedding).
+  // embedding and quality null: a synced photo with no face found (see computeSyncedImageEmbedding).
   async insertImage(
     profileId: string,
-    { embedding, jpeg }: { embedding: number[] | null; jpeg: Uint8Array },
+    { embedding, jpeg, quality }: { embedding: number[] | null; jpeg: Uint8Array; quality: FaceQuality | null },
     externalId: string | null = null,
   ): Promise<string> {
     const id = randomUUID();
     const embeddingSql = embedding ? vectorToSql(embedding) : null;
     await this.prisma.$executeRaw`
-      INSERT INTO security_server."MonitoringProfileImage" (id, "externalId", "profileId", image, embedding, "embeddingModelVersion", "createdAt")
-      VALUES (${id}, ${externalId}, ${profileId}, ${jpeg}, ${embeddingSql}::vector, ${EMBEDDING_MODEL_VERSION}, now())
+      INSERT INTO security_server."MonitoringProfileImage" (id, "externalId", "profileId", image, embedding, "embeddingModelVersion", quality, "createdAt")
+      VALUES (${id}, ${externalId}, ${profileId}, ${jpeg}, ${embeddingSql}::vector, ${EMBEDDING_MODEL_VERSION}, ${qualityToSql(quality)}::jsonb, now())
     `;
     return id;
   }

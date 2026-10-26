@@ -70,6 +70,12 @@ export class MonitoringProfileController {
     return this.service.addImage(profileId, file.buffer, acknowledgeWarning === 'true');
   }
 
+  @Post(':id/images/recalculate-quality')
+  @HttpCode(200)
+  recalculateQuality(@Param('id') profileId: string) {
+    return this.service.recalculateQuality(profileId);
+  }
+
   @Delete(':id/images/:imageId')
   @HttpCode(204)
   removeImage(@Param('id') profileId: string, @Param('imageId') imageId: string) {
