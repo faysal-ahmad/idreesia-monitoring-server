@@ -227,6 +227,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (!frame || frame.empty) {
+        frame?.release();
         loop.consecutiveFailures++;
         if (loop.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
           this.logger.warn(`Channel "${loop.channel.name}": stream appears dropped — reconnecting`);
@@ -258,8 +259,14 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
           .processFrame(loop.channel, downscaled)
           .catch((error) => this.logger.warn(`Channel "${loop.channel.name}": frame processing error: ${error}`))
           .finally(() => {
+            downscaled.release();
             loop.processing = false;
           });
+      } else {
+        // Cameras deliver far more frames than are sampled for recognition. A frame left unreleased
+        // is freed by a GC finalizer, and that churn (every dropped frame, on every channel) is what
+        // triggers the V8 fatal error in Isolate::AdjustAmountOfExternalAllocatedMemory.
+        frame.release();
       }
     }
 

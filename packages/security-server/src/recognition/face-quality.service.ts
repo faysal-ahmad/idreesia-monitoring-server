@@ -73,13 +73,18 @@ function linear(value: number, min: number, max: number): number {
 export class FaceQualityService {
   assess(face: DetectedFace, aligned: cv.Mat): FaceQuality {
     const gray = aligned.bgrToGray();
-    const signals: Record<FaceQualitySignal, number> = {
-      size: linear(Math.min(face.box.width, face.box.height), SIZE_MIN_PX, SIZE_MAX_PX),
-      confidence: linear(face.confidence, CONFIDENCE_MIN, CONFIDENCE_MAX),
-      sharpness: this.sharpness(gray),
-      exposure: this.exposure(gray),
-      pose: this.pose(face.landmarks),
-    };
+    let signals: Record<FaceQualitySignal, number>;
+    try {
+      signals = {
+        size: linear(Math.min(face.box.width, face.box.height), SIZE_MIN_PX, SIZE_MAX_PX),
+        confidence: linear(face.confidence, CONFIDENCE_MIN, CONFIDENCE_MAX),
+        sharpness: this.sharpness(gray),
+        exposure: this.exposure(gray),
+        pose: this.pose(face.landmarks),
+      };
+    } finally {
+      gray.release();
+    }
 
     const weighted = (Object.keys(WEIGHTS) as FaceQualitySignal[]).reduce(
       (sum, signal) => sum + WEIGHTS[signal] * signals[signal],
@@ -93,8 +98,12 @@ export class FaceQualityService {
   }
 
   private sharpness(gray: cv.Mat): number {
-    const { stddev } = gray.laplacian(cv.CV_64F).meanStdDev();
+    const laplacian = gray.laplacian(cv.CV_64F);
+    const { mean, stddev } = laplacian.meanStdDev();
     const variance = stddev.at(0, 0) ** 2;
+    laplacian.release();
+    mean.release();
+    stddev.release();
     if (variance <= 0) return 0;
     return linear(Math.log10(variance), Math.log10(SHARPNESS_MIN_VARIANCE), Math.log10(SHARPNESS_MAX_VARIANCE));
   }
@@ -103,6 +112,8 @@ export class FaceQualityService {
     const { mean, stddev } = gray.meanStdDev();
     const brightness = clamp01(1 - Math.abs(mean.at(0, 0) - BRIGHTNESS_IDEAL) / BRIGHTNESS_TOLERANCE);
     const contrast = linear(stddev.at(0, 0), CONTRAST_MIN_STDDEV, CONTRAST_MAX_STDDEV);
+    mean.release();
+    stddev.release();
     return Math.min(brightness, contrast);
   }
 

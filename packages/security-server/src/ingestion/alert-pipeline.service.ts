@@ -34,7 +34,12 @@ export class AlertPipelineService {
 
     for (const face of faces) {
       const aligned = this.faceRecognition.align(frame, face.landmarks);
-      const embedding = this.faceRecognition.embed(aligned);
+      let embedding: number[];
+      try {
+        embedding = this.faceRecognition.embed(aligned);
+      } finally {
+        aligned.release();
+      }
       const match = this.matchCache.findBestMatch(embedding, threshold);
       if (match) {
         await this.triggerAlert(channel, frame, face.box, match.profileId, match.profileName, match.score);
@@ -56,7 +61,13 @@ export class AlertPipelineService {
     if (last && now - last < ALERT_COOLDOWN_MS) return;
     this.lastAlertAt.set(cooldownKey, now);
 
-    const image = cv.imencode('.jpg', this.annotateMatchedFace(frame, faceBox));
+    const annotated = this.annotateMatchedFace(frame, faceBox);
+    let image: Buffer;
+    try {
+      image = cv.imencode('.jpg', annotated);
+    } finally {
+      annotated.release();
+    }
     await this.alerts.create({ monitoringProfileId: profileId, channelId: channel.id, similarityScore: score }, image);
     this.logger.log(
       `ALERT: "${profileName}" detected on channel "${channel.name}" (cosine similarity ${score.toFixed(3)})`,

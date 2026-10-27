@@ -7,3 +7,6 @@ node_modules
 **/node_modules
 **/dist
 .nx
+
+# Holds secrets; the production builds `COPY . .`, so keep it out of the build context.
+.env

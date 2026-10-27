@@ -2,10 +2,7 @@ services:
   postgres:
     image: pgvector/pgvector:0.8.7-pg18-bookworm
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: idreesia
-      POSTGRES_USER: idreesia
-      POSTGRES_PASSWORD: idreesia
+    env_file: .env
     volumes:
       - ${POSTGRES_DATA_HOST_DIR:-/data/postgres/data}:/var/lib/postgresql:cached
       - ./configs/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -41,20 +38,20 @@ services:
       go2rtc:
         condition: service_started
     restart: unless-stopped
-    environment:
-      # sslmode=disable: the postgres container has no TLS at all, and Prisma's query engine still
-      # attempts (and fails) a TLS handshake against bookworm's OpenSSL 3 unless told not to.
-      DATABASE_URL: "postgresql://idreesia:idreesia@postgres:5432/idreesia?schema=security_server&sslmode=disable"
-      # Read RTSP over TCP in OpenCV's FFmpeg backend — over UDP, lost RTP packets make reads
-      # silently return empty frames.
-      OPENCV_FFMPEG_CAPTURE_OPTIONS: "rtsp_transport;tcp"
-      # Password for the admin pages (everything except Alerts). Change it before deploying.
-      ADMIN_PASSWORD: change-me
-      # The ERP, which owns channels and profiles and receives alerts, and the ERP service account
-      # (holding only the "Sync Security Server Data" permission) this server logs in as.
-      ERP_URL: https://erp.example.org
-      ERP_USERNAME: security-server
-      ERP_PASSWORD: change-me
+    env_file: .env
+    # If the process dies from a native crash, don't let the host dump its multi-GB core: the dump
+    # can keep the dying process alive for minutes, so the container looks "Up" but serves nothing
+    # and `restart: unless-stopped` never gets to restart it.
+    ulimits:
+      core: 0
+    # Any HTTP response counts as alive; only a refused connection or a timeout (a hung event loop)
+    # fails. Docker only marks the container unhealthy - it doesn't restart it by itself.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/erp/status',{signal:AbortSignal.timeout(8000)}).then(()=>process.exit(0),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     volumes:
       # Alert frame images (see ALERT_IMAGES_DIR) on a folder on the host machine. The server runs as
       # UID 1001 (see Dockerfile.production), so that folder must be writable by UID 1001.

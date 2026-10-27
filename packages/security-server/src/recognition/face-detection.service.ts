@@ -41,18 +41,26 @@ export class FaceDetectionService implements OnModuleInit {
     // shrink small, distant faces in live camera frames below what YuNet can find.
     const scale = FALLBACK_MAX_SIDE / longSide;
     const resized = image.resize(Math.round(image.rows * scale), Math.round(image.cols * scale));
-    return this.detectAtFullSize(resized, scoreThreshold, nmsThreshold).map((face) => ({
-      box: {
-        x: face.box.x / scale,
-        y: face.box.y / scale,
-        width: face.box.width / scale,
-        height: face.box.height / scale,
-      },
-      confidence: face.confidence,
-      landmarks: face.landmarks.map(([x, y]): [number, number] => [x / scale, y / scale]),
-    }));
+    try {
+      return this.detectAtFullSize(resized, scoreThreshold, nmsThreshold).map((face) => ({
+        box: {
+          x: face.box.x / scale,
+          y: face.box.y / scale,
+          width: face.box.width / scale,
+          height: face.box.height / scale,
+        },
+        confidence: face.confidence,
+        landmarks: face.landmarks.map(([x, y]): [number, number] => [x / scale, y / scale]),
+      }));
+    } finally {
+      resized.release();
+    }
   }
 
+  // Every Mat created here is released explicitly. Left to the garbage collector, the binding frees
+  // each Mat's native buffer from a GC finalizer, and with this many Mats per frame that runs into
+  // a V8 fatal error ("Fatal error ... Check failed" in Isolate::AdjustAmountOfExternalAllocatedMemory,
+  // reached from cv::Mat::~Mat) that kills the process.
   private detectAtFullSize(image: cv.Mat, scoreThreshold: number, nmsThreshold: number): DetectedFace[] {
     const inputW = image.cols;
     const inputH = image.rows;
@@ -61,15 +69,34 @@ export class FaceDetectionService implements OnModuleInit {
 
     const padded = image.copyMakeBorder(0, padH - inputH, 0, padW - inputW, cv.BORDER_CONSTANT, new cv.Vec3(0, 0, 0));
     const blob = cv.blobFromImage(padded);
+    padded.release();
 
     this.net.setInput(blob);
     const outputs = this.net.forward(OUTPUT_NAMES);
+    blob.release();
 
     const cls = outputs.slice(0, 3);
     const obj = outputs.slice(3, 6);
     const bbox = outputs.slice(6, 9);
     const kps = outputs.slice(9, 12);
 
+    try {
+      return this.decode(cls, obj, bbox, kps, padW, padH, scoreThreshold, nmsThreshold);
+    } finally {
+      outputs.forEach((output) => output.release());
+    }
+  }
+
+  private decode(
+    cls: cv.Mat[],
+    obj: cv.Mat[],
+    bbox: cv.Mat[],
+    kps: cv.Mat[],
+    padW: number,
+    padH: number,
+    scoreThreshold: number,
+    nmsThreshold: number,
+  ): DetectedFace[] {
     const boxes: cv.Rect[] = [];
     const scores: number[] = [];
     const rawFaces: { box: cv.Rect; score: number; landmarks: [number, number][] }[] = [];

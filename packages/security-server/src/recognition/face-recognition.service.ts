@@ -194,14 +194,23 @@ export class FaceRecognitionService implements OnModuleInit {
   align(image: cv.Mat, landmarks: [number, number][]): cv.Mat {
     const m = getSimilarityTransformMatrix(landmarks);
     const transformMat = new cv.Mat(m, cv.CV_64FC1);
-    return image.warpAffine(transformMat, new cv.Size(112, 112), cv.INTER_LINEAR);
+    try {
+      return image.warpAffine(transformMat, new cv.Size(112, 112), cv.INTER_LINEAR);
+    } finally {
+      transformMat.release();
+    }
   }
 
   embed(alignedImage: cv.Mat): number[] {
     const blob = cv.blobFromImage(alignedImage, 1, new cv.Size(112, 112), new cv.Vec3(0, 0, 0), true, false);
     this.net.setInput(blob);
+    blob.release();
     const output = this.net.forward();
-    return (output.getDataAsArray() as number[][])[0];
+    try {
+      return (output.getDataAsArray() as number[][])[0];
+    } finally {
+      output.release();
+    }
   }
 
   cosineSimilarity(a: number[], b: number[]): number {
