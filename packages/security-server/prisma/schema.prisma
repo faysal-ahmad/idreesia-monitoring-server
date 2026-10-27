@@ -1,10 +1,147 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector(schema: "security_server")]
+  schemas    = ["security_server"]
 }
 
-// Models go here as functionality is added.
+// A configured RTSP camera ("channel") the recognition engine reads frames from. Connection
+// details (host, port, path, credentials) live in `config` (validated by RtspConfigSchema).
+// Editable here and in the ERP; ErpSyncService keeps the two in step.
+model VideoFeedSource {
+  id                  String              @id @default(cuid())
+  // The ERP's id for this channel; null until the ERP has received it.
+  externalId          String?             @unique
+  name                String
+  config              Json
+  enabled             Boolean             @default(true)
+  // null = use SFace's hardcoded reference default; set via the per-channel test-match calibration flow.
+  similarityThreshold Float?
+  // How many frames per second are analyzed for faces. All frames are still read to keep the
+  // stream near-live — this only limits how many reach recognition.
+  recognitionFps      Float               @default(5)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  // Deleted, but kept until the ERP has been told (see ErpSyncService). Hidden everywhere else.
+  deletedAt           DateTime?
+
+  alerts Alert[]
+
+  @@schema("security_server")
+}
+
+// A watch-list person. isTest separates calibration profiles from real monitoring profiles;
+// test profiles are excluded from the live alert pipeline's match set unless
+// Configuration.includeTestProfilesInAlerts is on. Editable here and in the ERP, like
+// VideoFeedSource.
+model MonitoringProfile {
+  id         String    @id @default(cuid())
+  // The ERP's id for this profile; null until the ERP has received it.
+  externalId String?   @unique
+  name      String
+  isTest    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Deleted, but kept until the ERP has been told (see ErpSyncService). Hidden everywhere else.
+  deletedAt DateTime?
+
+  images MonitoringProfileImage[]
+  alerts Alert[]
+
+  @@schema("security_server")
+}
+
+// One enrollment photo for a MonitoringProfile, with its own SFace embedding
+// computed when it's uploaded here or downloaded from the ERP (embeddings are not aggregated per
+// person).
+model MonitoringProfileImage {
+  id                    String                     @id @default(cuid())
+  // The ERP's id for this photo; null until the ERP has received it.
+  externalId            String?                    @unique
+  profileId             String
+  profile               MonitoringProfile          @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  image                 Bytes
+  // 128-d SFace embedding. Prisma has no native vector type support, so reads/
+  // writes to this column go through $queryRaw/$executeRaw.
+  // null for a photo synced from the ERP in which no face could be found; it's kept (so the photo
+  // set still matches the ERP's) but takes no part in matching.
+  embedding             Unsupported("vector(128)")?
+  // The pipeline version that produced `embedding` (see EMBEDDING_MODEL_VERSION). Embeddings from
+  // different versions aren't comparable; anything not on the current version is recomputed from
+  // `image` at startup by EmbeddingBackfillService. null = produced before versioning existed.
+  embeddingModelVersion String?
+  // A FaceQuality (see face-quality.service.ts): how usable the photo is for recognition. Shown to
+  // the admin only; it plays no part in matching and isn't sent to the ERP. null = no face found,
+  // or not scored yet (photos stored before scoring existed get it from "Recalculate quality").
+  quality               Json?
+  createdAt             DateTime                   @default(now())
+
+  @@schema("security_server")
+}
+
+// Detection history: who was detected, when, by which channel, on what evidence, and how
+// confident the match was.
+model Alert {
+  id                  String            @id @default(cuid())
+  timestamp           DateTime          @default(now())
+  monitoringProfileId String
+  // Deleting a monitoring profile wipes its alert history.
+  monitoringProfile   MonitoringProfile @relation(fields: [monitoringProfileId], references: [id], onDelete: Cascade)
+  channelId           String
+  // Deleting a channel with alert history is blocked (no cascade) to preserve the log.
+  channel             VideoFeedSource   @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  // File name (<uuid>.jpg) of the downscaled frame that triggered this alert — the visual
+  // evidence an admin reviews. The JPEG itself lives on disk under ALERT_IMAGES_DIR, not in the DB.
+  imageFile           String
+  // Cosine similarity between the detected face and the matched profile's embedding at alert time.
+  similarityScore     Float
+  // Delivery to the ERP (see ErpAlertPushService): PENDING until the ERP has stored it, so an
+  // alert raised while the ERP is unreachable is sent once it's back.
+  erpSyncStatus       ErpSyncStatus     @default(PENDING)
+  // Why the last delivery attempt failed, while still PENDING.
+  erpSyncError        String?
+
+  @@index([erpSyncStatus, timestamp])
+  @@schema("security_server")
+}
+
+enum ErpSyncStatus {
+  PENDING
+  SENT
+
+  @@schema("security_server")
+}
+
+// App-wide settings — a generic key-value store so new settings can be added without a
+// schema migration. `value` is untyped JSON at the DB level; each key's label, default, and
+// validation live in CONFIG_DEFINITIONS (src/configuration/configuration.schema.ts).
+model Configuration {
+  key         String   @id
+  displayName String
+  value       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@schema("security_server")
+}
+
+// Bookkeeping for the ERP sync (a single row, id 1). Not a setting, so it lives outside
+// Configuration, whose rows are all admin-editable on the Configuration page.
+model ErpSyncState {
+  id                Int       @id @default(1)
+  // The ERP's serverTime from the last pull, sent as the next pull's `since`.
+  pullCursor        String?
+  // When the last successful sync started, on this server's clock: anything updated after it
+  // counts as changed here since that sync.
+  lastSyncStartedAt DateTime?
+  lastSyncedAt      DateTime?
+  lastSyncError     String?
+  updatedAt         DateTime  @updatedAt
+
+  @@schema("security_server")
+}

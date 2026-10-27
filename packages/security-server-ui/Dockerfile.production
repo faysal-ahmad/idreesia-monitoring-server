@@ -1,10 +1,15 @@
-FROM node:22.17.0-alpine3.22 AS build
+FROM node:24.22.1-bookworm-slim AS build
 
 WORKDIR /app
 
 COPY . .
 
-RUN yarn install --frozen-lockfile
+# Yarn 1 installs every workspace's dependencies, including the security-server's
+# native @u4/opencv4nodejs. --ignore-scripts skips its node-gyp build (the UI never
+# loads it), so this stage needs no OpenCV or compiler toolchain. The UI's own
+# native tooling (swc, rolldown, parcel watcher, nx) ships prebuilt binaries as
+# optional dependencies, so it doesn't rely on install scripts.
+RUN yarn install --frozen-lockfile --ignore-scripts
 RUN yarn nx run @idreesia/security-server-ui:build
 
 FROM nginx:1.27-alpine AS production

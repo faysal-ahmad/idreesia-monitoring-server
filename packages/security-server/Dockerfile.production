@@ -1,28 +1,61 @@
-FROM node:22.17.0-alpine3.22 AS build
+FROM node:24.22.1-bookworm-slim AS build
+
+# opencv headers + libopencv_* runtime libs for @u4/opencv4nodejs
+# to compile its bindings against
+# build-essential/python3/pkg-config: native build toolchain
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  libopencv-dev \
+  build-essential \
+  python3 \
+  pkg-config \
+  && rm -rf /var/lib/apt/lists/*
+
+# Compile @u4/opencv4nodejs against the apt-installed OpenCV instead of
+# triggering its own OpenCV source build
+ENV OPENCV4NODEJS_DISABLE_AUTOBUILD=1
+ENV OPENCV_INCLUDE_DIR=/usr/include/opencv4
 
 WORKDIR /app
 
 COPY . .
 
-RUN yarn install --frozen-lockfile
+# OPENCV_LIB_DIR is architecture-dependent (Debian installs libs under the
+# multiarch triplet dir, e.g. /usr/lib/aarch64-linux-gnu) — resolved via gcc
+# rather than hardcoded, so this build works on both amd64 and arm64 hosts.
+RUN export OPENCV_LIB_DIR="/usr/lib/$(gcc -print-multiarch)" && \
+  yarn install --frozen-lockfile
 RUN yarn nx run @idreesia/security-server:prisma-generate
 RUN yarn nx run @idreesia/security-server:build
 
-FROM node:22.17.0-alpine3.22 AS production
+FROM node:24.22.1-bookworm-slim AS production
 
-RUN apk --no-cache add postgresql-client openssl
+# postgresql-client/openssl: db access
+# libopencv-dev: runtime libopencv_*.so libs for the bindings compiled in the
+# build stage above (installing the -dev metapackage rather than hand-picking
+# the specific runtime submodules keeps this in step with whatever the
+# compiled addon actually links against); libopencv-videoio's own dependencies
+# already cover ffmpeg, so no separate ffmpeg package is needed
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates \
+  postgresql-client \
+  openssl \
+  libopencv-dev \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-RUN addgroup -g 1001 -S idreesia && \
-    adduser -S idreesia -u 1001 && \
+RUN groupadd -g 1001 idreesia && \
+    useradd -u 1001 -g idreesia -s /usr/sbin/nologin idreesia && \
     chown -R idreesia:idreesia /app
 
 COPY --from=build --chown=idreesia:idreesia /app/node_modules ./node_modules
 COPY --from=build --chown=idreesia:idreesia /app/package.json /app/yarn.lock ./
 COPY --from=build --chown=idreesia:idreesia /app/packages/security-server/dist ./packages/security-server/dist
 COPY --from=build --chown=idreesia:idreesia /app/packages/security-server/prisma ./packages/security-server/prisma
+COPY --from=build --chown=idreesia:idreesia /app/packages/security-server/models ./packages/security-server/models
+# prisma/seed.ts imports the config registry from src (only depends on zod), so ship just that file
+COPY --from=build --chown=idreesia:idreesia /app/packages/security-server/src/configuration/configuration.schema.ts ./packages/security-server/src/configuration/configuration.schema.ts
 
 USER idreesia
 
-ENTRYPOINT ["node", "packages/security-server/dist/main.js"]
+ENTRYPOINT ["sh", "-c", "yarn prisma migrate deploy --schema=packages/security-server/prisma/schema.prisma && yarn prisma db seed --schema=packages/security-server/prisma/schema.prisma && node packages/security-server/dist/main.js"]

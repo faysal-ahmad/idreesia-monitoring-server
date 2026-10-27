@@ -6,6 +6,7 @@
 
 [Learn more about this workspace setup and its capabilities](https://nx.dev/docs/technologies/typescript/introduction?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
 🚀 If you haven't connected to Nx Cloud yet, [complete your setup here](https://cloud.nx.app/get-started). Get faster builds with remote caching, distributed task execution, and self-healing CI. [See how your workspace can benefit](#nx-cloud).
+
 ## Generate a library
 
 ```sh
@@ -32,15 +33,21 @@ These targets are either [inferred automatically](https://nx.dev/docs/concepts/i
 
 ## Versioning and releasing
 
-To version and release the library use
+Releases run from `.github/workflows/release.yml`; the version logic lives in `scripts/resolve-release-version.mjs`.
+
+- **PR into `develop`**: label it `major`, `minor` or `patch`. When it merges, the version in the package.json files is bumped and committed as `chore(release): X.Y.Z for PR #N [skip ci]`.
+- **PR from `develop` into `master`**: when it merges, the release is tagged `vX.Y.Z`. Both production images are then built (linux/amd64) and pushed to GHCR with the tags `X.Y.Z`, `X.Y`, `X` and `latest`:
+  - `ghcr.io/faysal-ahmad/idreesia-security-server/security-server`
+  - `ghcr.io/faysal-ahmad/idreesia-security-server/security-server-ui`
+
+### Deploying the published images
+
+`docker-compose.production-cuda.yml` runs the published `latest` images instead of building locally. The packages are public, so the host can pull them without logging in:
 
 ```
-npx nx release
+yarn docker:production-cuda:pull
+yarn docker:production-cuda:up
 ```
-
-Pass `--dry-run` to see what would happen without actually releasing the library.
-
-[Learn more about Nx release &raquo;](https://nx.dev/docs/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
 
 ## Keep TypeScript project references up to date
 

@@ -1,33 +1,17 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:0.8.7-pg18-bookworm
     restart: unless-stopped
     environment:
-      POSTGRES_DB: idreesia_config
+      POSTGRES_DB: idreesia
       POSTGRES_USER: idreesia
       POSTGRES_PASSWORD: idreesia
-    ports:
-      - '5432:5432'
     volumes:
-      - postgres-dev:/var/lib/postgresql/data:cached
+      - postgres-dev:/var/lib/postgresql:cached
       - ./configs/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U idreesia']
       interval: 5s
-      timeout: 5s
-      retries: 20
-
-  security-server-ui:
-    build:
-      context: .
-      dockerfile: ./packages/security-server-ui/Dockerfile.development
-    ports:
-      - '4200:4200'
-    volumes:
-      - .:/app
-    healthcheck:
-      start_period: 30s
-      interval: 10s
       timeout: 5s
       retries: 20
 
@@ -38,10 +22,80 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      go2rtc:
+        condition: service_started
     restart: unless-stopped
-    env_file: ./packages/security-server/.env
+    environment:
+      # sslmode=disable: the postgres container has no TLS at all, and Prisma's query engine still
+      # attempts (and fails) a TLS handshake against bookworm's OpenSSL 3 unless told not to.
+      DATABASE_URL: 'postgresql://idreesia:idreesia@postgres:5432/idreesia?schema=security_server&sslmode=disable'
+      # Read RTSP over TCP in OpenCV's FFmpeg backend — over UDP, lost RTP packets make reads
+      # silently return empty frames.
+      OPENCV_FFMPEG_CAPTURE_OPTIONS: 'rtsp_transport;tcp'
+      # Password for the admin pages (everything except Alerts).
+      ADMIN_PASSWORD: admin
+      # The ERP (idreesia-erp's dev stack on the host), which owns channels and profiles and
+      # receives alerts, and the ERP service account with the "Sync Security Server Data" permission.
+      ERP_URL: http://host.docker.internal:3000
+      ERP_USERNAME: security-server
+      ERP_PASSWORD: security-server
+      # Nx's workspace data otherwise lives in the bind-mounted repo's .nx/, shared with the UI
+      # container and surviving restarts. Its running-tasks table is keyed by PID, and a restarted
+      # container's `nx serve` gets the same PID again, so it finds its own stale entry and waits
+      # forever on "another nx process". The tmpfs below is wiped on every container start.
+      NX_WORKSPACE_DATA_DIRECTORY: /nx-workspace-data
+    tmpfs:
+      - /nx-workspace-data
     volumes:
       - .:/app
+      # Each container gets its own node_modules, so the two containers' startup `yarn install`
+      # runs (which compile native modules) can't race on or overwrite a shared tree, and the
+      # host's own node_modules (built for macOS) stays untouched.
+      - security-server-node-modules:/app/node_modules
+      # Alert frame images (see ALERT_IMAGES_DIR), kept out of Postgres.
+      - alert-images:/data/alert-images
+
+  # Media server: the only client of each camera. The security server registers one stream per
+  # enabled channel through its API and reads the re-streams; browsers watch them via the UI proxy.
+  # Settings are passed inline; /config/go2rtc.yaml is go2rtc's own writable file inside this
+  # container (where it saves API-added streams) — deliberately not in the repo, since stream
+  # sources carry camera credentials. The DB stays the source of truth (see MediaServerService).
+  go2rtc:
+    image: alexxit/go2rtc:1.9.14
+    restart: unless-stopped
+    command:
+      - go2rtc
+      - -config
+      - /config/go2rtc.yaml
+      - -config
+      - '{"api":{"listen":":1984"},"rtsp":{"listen":":8554"},"webrtc":{"listen":""}}'
+    # No published ports: only the security server and the UI's dev proxy (same network) reach it.
+
+  security-server-ui:
+    build:
+      context: .
+      dockerfile: ./packages/security-server-ui/Dockerfile.development
+    depends_on:
+      - security-server
+    ports:
+      - '4200:4200'
+    environment:
+      # Own Nx workspace data, see security-server above.
+      NX_WORKSPACE_DATA_DIRECTORY: /nx-workspace-data
+    tmpfs:
+      - /nx-workspace-data
+    volumes:
+      - .:/app
+      # Own node_modules, see security-server above.
+      - security-server-ui-node-modules:/app/node_modules
+    healthcheck:
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
 volumes:
   postgres-dev: {}
+  alert-images: {}
+  security-server-node-modules: {}
+  security-server-ui-node-modules: {}

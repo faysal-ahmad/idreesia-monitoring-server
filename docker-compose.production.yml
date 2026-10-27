@@ -1,13 +1,10 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:0.8.7-pg18-bookworm
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: idreesia_config
-      POSTGRES_USER: idreesia
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    env_file: .env
     volumes:
-      - postgres-data:/var/lib/postgresql/data:cached
+      - ${POSTGRES_DATA_HOST_DIR:-/data/postgres/data}:/var/lib/postgresql:cached
       - ./configs/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U idreesia']
@@ -15,13 +12,21 @@ services:
       timeout: 5s
       retries: 20
 
-  security-server-ui:
-    build:
-      context: .
-      dockerfile: ./packages/security-server-ui/Dockerfile.production
-    ports:
-      - '4200:4200'
+  # Media server: the only client of each camera. The security server registers one stream per
+  # enabled channel through its API and reads the re-streams; browsers watch them via the UI proxy.
+  # Settings are passed inline; /config/go2rtc.yaml is go2rtc's own writable file inside this
+  # container (where it saves API-added streams) — deliberately not in the repo, since stream
+  # sources carry camera credentials. The DB stays the source of truth (see MediaServerService).
+  go2rtc:
+    image: alexxit/go2rtc:1.9.14
     restart: unless-stopped
+    command:
+      - go2rtc
+      - -config
+      - /config/go2rtc.yaml
+      - -config
+      - '{"api":{"listen":":1984"},"rtsp":{"listen":":8554"},"webrtc":{"listen":""}}'
+    # No published ports: only the security server and the UI's nginx (same network) reach it.
 
   security-server:
     build:
@@ -30,8 +35,43 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      go2rtc:
+        condition: service_started
     restart: unless-stopped
-    env_file: ./packages/security-server/.env
+    env_file: .env
+    # If the process dies from a native crash, don't let the host dump its multi-GB core: the dump
+    # can keep the dying process alive for minutes, so the container looks "Up" but serves nothing
+    # and `restart: unless-stopped` never gets to restart it.
+    ulimits:
+      core: 0
+    # Any HTTP response counts as alive; only a refused connection or a timeout (a hung event loop)
+    # fails. Docker only marks the container unhealthy - it doesn't restart it by itself.
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/erp/status',{signal:AbortSignal.timeout(8000)}).then(()=>process.exit(0),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    volumes:
+      # Alert frame images (see ALERT_IMAGES_DIR) on a folder on the host machine. The server runs as
+      # UID 1001 (see Dockerfile.production), so that folder must be writable by UID 1001.
+      - ${ALERT_IMAGES_HOST_DIR:-/data/alert-images}:/data/alert-images
+
+  security-server-ui:
+    build:
+      context: .
+      dockerfile: ./packages/security-server-ui/Dockerfile.production
+    depends_on:
+      - security-server
+    ports:
+      - '80:4200'
+    restart: unless-stopped
 
 volumes:
   postgres-data: {}

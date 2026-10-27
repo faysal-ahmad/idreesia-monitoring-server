@@ -1,0 +1,51 @@
+name: Build Application
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  validate-master-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require develop branch for master PRs
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$BASE_REF" = "master" ] && { [ "$HEAD_REF" != "develop" ] || [ "$HEAD_REPOSITORY" != "$REPOSITORY" ]; }; then
+            echo "::error::PRs into master must come from the develop branch in this repository."
+            exit 1
+          fi
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'yarn'
+
+      # --ignore-scripts skips the native @u4/opencv4nodejs build: OpenCV is only ever compiled
+      # in the Docker images, and lint/typecheck/build never load the addon. That also skips
+      # Prisma's postinstall, so generate the client explicitly for typecheck.
+      - run: yarn install --frozen-lockfile --ignore-scripts
+      - run: yarn nx run @idreesia/security-server:prisma-generate
+
+      - run: yarn nx format:check --all
+      - run: yarn nx run-many -t lint build typecheck

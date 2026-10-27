@@ -1,9 +1,51 @@
-FROM node:22.17.0-alpine3.22
+FROM node:24.22.1-bookworm-slim
 
-RUN apk --no-cache add postgresql-client
+# Debian/glibc over Alpine/musl: musl's small default thread stack and weak
+# backtrace() support make native video-decode workloads (FFmpeg's H.264 error
+# concealment on corrupt frames, V8 concurrent-marking GC) prone to
+# stack-corruption crashes that then hang instead of exiting cleanly — glibc's
+# larger stacks and real backtrace() make that class of failure both less
+# likely, and if it still happens, actually recoverable via container restart.
+#
+# postgresql-client: db access
+# libopencv-dev: OpenCV headers + libopencv_* runtime libs (YuNet/SFace detection
+# and recognition via cv.dnn, RTSP ingestion via cv.VideoCapture) for
+# @u4/opencv4nodejs to compile its bindings against
+# build-essential/python3/pkg-config: native build toolchain
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates \
+  postgresql-client \
+  libopencv-dev \
+  build-essential \
+  python3 \
+  pkg-config \
+  && rm -rf /var/lib/apt/lists/*
+
+# Compile @u4/opencv4nodejs against the apt-installed OpenCV instead of
+# triggering its own OpenCV source build
+ENV OPENCV4NODEJS_DISABLE_AUTOBUILD=1
+ENV OPENCV_INCLUDE_DIR=/usr/include/opencv4
+# Force single-threaded make — parallel jobs race on creating the .deps output
+# directories for node-gyp's dependency-tracking files against this bind mount,
+# intermittently failing with "No such file or directory" mid-compile.
+ENV MAKEFLAGS=-j1
+# Both dev containers share the repo's .nx cache/lock state via the bind mount below —
+# a persistent daemon from one container gets confused by the other's runs (false
+# "recursive task invocation" errors), so each container runs Nx as a one-shot process.
+ENV NX_DAEMON=false
 
 WORKDIR /app
 
-CMD yarn install && \
+# OPENCV_LIB_DIR is architecture-dependent (Debian installs libs under the
+# multiarch triplet dir, e.g. /usr/lib/aarch64-linux-gnu) — resolved at
+# container start via gcc rather than hardcoded, so this image works on both
+# amd64 and arm64 hosts.
+#
+# serve hot-reloads without the Nx daemon (disabled above): webpack --watch rebuilds
+# dist/main.js on source changes and node --watch restarts the server when it changes.
+CMD export OPENCV_LIB_DIR="/usr/lib/$(gcc -print-multiarch)" && \
+  yarn install && \
   yarn nx run @idreesia/security-server:prisma-generate && \
+  yarn nx run @idreesia/security-server:prisma-migrate-deploy && \
+  yarn nx run @idreesia/security-server:prisma-db-seed && \
   yarn nx run @idreesia/security-server:serve

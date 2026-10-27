@@ -1,1 +1,187 @@
 /* You can add global styles to this file, and also import other style files */
+
+.app-shell-sidebar .ant-layout-sider-children {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell-sidebar-inner {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.app-shell-sidebar-menu {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.app-shell-sidebar-menu .ant-menu-inline,
+.app-shell-sidebar-menu .ant-menu-inline-collapsed {
+  border-inline-end: none !important;
+}
+
+.app-shell-sidebar-collapse {
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.list-container {
+  width: 100%;
+  overflow: hidden;
+}
+
+.list-table .ant-table-container {
+  border: 1px solid #d0d5dd !important;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.list-table .ant-table-thead > tr > th {
+  background: #f3f4f6 !important;
+  border-bottom: 1px solid #d0d5dd !important;
+  color: #344054;
+  font-weight: 600;
+}
+
+.list-table .ant-table-thead > tr > th:not(:last-child),
+.list-table .ant-table-tbody > tr > td:not(:last-child) {
+  border-inline-end: 1px solid #cfd4dc !important;
+}
+
+.list-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #cfd4dc !important;
+}
+
+.list-table .ant-table-tbody > tr:hover > td {
+  background: #f5f9ff !important;
+}
+
+.list-table .ant-table-footer {
+  border-top: 1px solid #d0d5dd;
+  background: #fafafa;
+}
+
+.list-table .ant-table-body {
+  overflow-x: hidden !important;
+}
+
+.list-table .ant-table-cell-scrollbar {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.list-actions-column {
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.list-actions-icon {
+  cursor: pointer;
+  font-size: 20px;
+  padding-right: 7px;
+}
+
+.list-actions-icon:last-child {
+  padding-right: 0;
+}
+
+.alert-row-new > td {
+  animation: alert-row-flash 1s ease-in-out infinite;
+}
+
+/* The shared hover background is !important and would otherwise hide the flash. */
+.list-table .ant-table-tbody > tr.alert-row-new:hover > td {
+  background: #ffccc7 !important;
+}
+
+@keyframes alert-row-flash {
+  0%,
+  100% {
+    background-color: #fff1f0;
+  }
+  50% {
+    background-color: #ff7875;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-row-new > td {
+    animation: none;
+    background-color: #ffccc7;
+  }
+}
+
+.list-table-header {
+  display: flex;
+  flex-flow: row nowrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+  gap: 12px;
+}
+
+.list-table-header-utilities {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+  max-width: 65%;
+  margin-left: auto;
+}
+
+.list-filter-chips {
+  width: 100%;
+}
+
+.list-filter-panel,
+.list-filter-panel form {
+  width: 640px !important;
+  max-width: 640px;
+  overflow: visible;
+}
+
+.live-feed {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.live-feed video-stream {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.live-feed video {
+  object-fit: contain;
+}
+
+.live-feed-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f5;
+}
+
+/* Centred between the Alerts title and the filter, on the title's line (32px = the h3's height). */
+.alerts-status-bar {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  column-gap: 24px;
+  row-gap: 4px;
+  min-height: 32px;
+}
