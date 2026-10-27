@@ -20,6 +20,8 @@ const RECONNECT_BACKOFF_MAX_MS = 60_000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 // A channel counts as online while frames keep arriving; this long without one and it's offline.
 const FRAME_STALE_MS = 10_000;
+// Pause before restarting a loop that crashed, so an error that recurs every frame can't spin.
+const CRASH_RESTART_DELAY_MS = 5_000;
 
 // connecting: started (or restarted) and hasn't delivered a frame or failed yet.
 export type ChannelHealthStatus = 'online' | 'connecting' | 'offline';
@@ -162,11 +164,31 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
       donePromise: Promise.resolve(),
       processing: false,
     };
-    loop.donePromise = this.runLoop(loop).catch((error) => {
-      this.logger.error(`Ingestion loop for channel "${channel.name}" crashed: ${error}`);
-    });
+    loop.donePromise = this.superviseLoop(loop);
     this.loops.set(channel.id, loop);
     this.logger.log(`Starting ingestion loop for channel "${channel.name}" (${channel.id})`);
+  }
+
+  // Restarts a loop that died on an unexpected error. Otherwise the channel would sit dead until
+  // the next server restart: its entry stays in `loops`, so reconcile() never starts it again.
+  private async superviseLoop(loop: ChannelLoop) {
+    while (!loop.stopped) {
+      try {
+        await this.runLoop(loop);
+      } catch (error) {
+        this.logger.error(
+          `Ingestion loop for channel "${loop.channel.name}" crashed — restarting in ${CRASH_RESTART_DELAY_MS / 1000}s: ${error}`,
+        );
+        try {
+          loop.capture?.release();
+        } catch {
+          // Already broken; dropping the reference is all that's left to do.
+        }
+        loop.capture = undefined;
+        loop.consecutiveFailures = 0;
+        await sleepUnlessStopped(loop, CRASH_RESTART_DELAY_MS);
+      }
+    }
   }
 
   private async stopLoop(loop: ChannelLoop) {

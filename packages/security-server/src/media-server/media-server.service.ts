@@ -10,6 +10,9 @@ const DEFAULT_RTSP_URL = 'rtsp://go2rtc:8554';
 const RESYNC_INTERVAL_MS = 60_000;
 // Ingestion asks for a sync whenever it can't open a re-stream; this caps how often that happens.
 const ON_DEMAND_SYNC_MIN_GAP_MS = 10_000;
+// Syncs are serialized, so one hung request to go2rtc would otherwise stall every later sync —
+// and with them channel reconciles and the ERP sync, which wait on one.
+const REQUEST_TIMEOUT_MS = 10_000;
 
 type Go2rtcStreams = Record<string, { producers: { url: string }[] | null } | null>;
 
@@ -54,7 +57,8 @@ export class MediaServerService {
     const now = Date.now();
     if (now - this.lastOnDemandSyncAt < ON_DEMAND_SYNC_MIN_GAP_MS) return;
     this.lastOnDemandSyncAt = now;
-    void this.syncEnabledChannels();
+    // Called directly, so not covered by @Interval's error handling: the channel read can fail.
+    this.syncEnabledChannels().catch((error) => this.logger.warn(`On-demand stream sync failed: ${error}`));
   }
 
   private async syncNow(enabledChannels: VideoFeedSource[]): Promise<boolean> {
@@ -86,7 +90,7 @@ export class MediaServerService {
   }
 
   private async request<T = unknown>(method: string, path: string): Promise<T> {
-    const response = await fetch(`${this.apiUrl}${path}`, { method });
+    const response = await fetch(`${this.apiUrl}${path}`, { method, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     if (!response.ok) {
       throw new Error(`${method} ${path.split('?')[0]} → ${response.status} ${await response.text()}`);
     }

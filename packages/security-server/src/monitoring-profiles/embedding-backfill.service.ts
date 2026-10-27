@@ -41,24 +41,29 @@ export class EmbeddingBackfillService implements OnModuleInit {
 
     let recomputed = 0;
     for (const row of rows) {
-      const decoded = cv.imdecode(Buffer.from(row.image));
-      const faces = this.faceDetection.detect(decoded, DETECTION_SCORE_THRESHOLD);
-      if (faces.length === 0) {
-        // Left on its old version, so it's retried on the next startup - the stale embedding
-        // stays in the match set meanwhile, which is no worse than before this backfill existed.
-        this.logger.warn(`No face re-detected in monitoring profile image ${row.id}; embedding left stale`);
-        continue;
-      }
+      // Runs during startup, so one unreadable photo throwing here would fail every restart.
+      try {
+        const decoded = cv.imdecode(Buffer.from(row.image));
+        const faces = this.faceDetection.detect(decoded, DETECTION_SCORE_THRESHOLD);
+        if (faces.length === 0) {
+          // Left on its old version, so it's retried on the next startup - the stale embedding
+          // stays in the match set meanwhile, which is no worse than before this backfill existed.
+          this.logger.warn(`No face re-detected in monitoring profile image ${row.id}; embedding left stale`);
+          continue;
+        }
 
-      const face = faces.reduce((best, f) => (f.confidence > best.confidence ? f : best));
-      const embedding = this.faceRecognition.embed(this.faceRecognition.align(decoded, face.landmarks));
-      const embeddingSql = vectorToSql(embedding);
-      await this.prisma.$executeRaw`
-        UPDATE security_server."MonitoringProfileImage"
-        SET embedding = ${embeddingSql}::vector, "embeddingModelVersion" = ${EMBEDDING_MODEL_VERSION}
-        WHERE id = ${row.id}
-      `;
-      recomputed++;
+        const face = faces.reduce((best, f) => (f.confidence > best.confidence ? f : best));
+        const embedding = this.faceRecognition.embed(this.faceRecognition.align(decoded, face.landmarks));
+        const embeddingSql = vectorToSql(embedding);
+        await this.prisma.$executeRaw`
+          UPDATE security_server."MonitoringProfileImage"
+          SET embedding = ${embeddingSql}::vector, "embeddingModelVersion" = ${EMBEDDING_MODEL_VERSION}
+          WHERE id = ${row.id}
+        `;
+        recomputed++;
+      } catch (error) {
+        this.logger.warn(`Could not recompute the embedding of monitoring profile image ${row.id}; left stale: ${error}`);
+      }
     }
 
     this.logger.log(`Recomputed ${recomputed} of ${rows.length} embedding(s)`);

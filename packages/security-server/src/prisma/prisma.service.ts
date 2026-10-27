@@ -15,7 +15,15 @@ import { Pool } from 'pg';
 // SQL. The old native engine used to configure this automatically from the connection string's
 // `schema=` param; that type/table resolution for raw SQL (e.g. the bare `::vector` cast in
 // MonitoringProfileService.addImage) now has to come from the session's search_path instead.
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, options: '-c search_path=security_server,public' });
+//
+// connectionTimeoutMillis: pg waits forever for a connection by default, so an unreachable
+// database would hang the ingestion loops' alert writes and the background jobs instead of
+// failing them (they all retry later).
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  options: '-c search_path=security_server,public',
+  connectionTimeoutMillis: 10_000,
+});
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
