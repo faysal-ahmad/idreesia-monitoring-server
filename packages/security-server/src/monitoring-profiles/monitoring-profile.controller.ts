@@ -15,7 +15,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Public } from '../auth/public.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { CreateMonitoringProfileSchema, UpdateMonitoringProfileSchema } from './monitoring-profile.schema';
+import {
+  CreateMonitoringProfileSchema,
+  UpdateMonitoringProfileSchema,
+} from './monitoring-profile.schema';
 import { MonitoringProfileService } from './monitoring-profile.service';
 
 @Controller('monitoring-profiles')
@@ -36,7 +39,8 @@ export class MonitoringProfileController {
 
   @Post()
   create(
-    @Body(new ZodValidationPipe(CreateMonitoringProfileSchema)) dto: ReturnType<typeof CreateMonitoringProfileSchema.parse>,
+    @Body(new ZodValidationPipe(CreateMonitoringProfileSchema))
+    dto: ReturnType<typeof CreateMonitoringProfileSchema.parse>,
   ) {
     return this.service.create(dto);
   }
@@ -44,7 +48,8 @@ export class MonitoringProfileController {
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(UpdateMonitoringProfileSchema)) dto: ReturnType<typeof UpdateMonitoringProfileSchema.parse>,
+    @Body(new ZodValidationPipe(UpdateMonitoringProfileSchema))
+    dto: ReturnType<typeof UpdateMonitoringProfileSchema.parse>,
   ) {
     return this.service.update(id, dto);
   }
@@ -67,7 +72,11 @@ export class MonitoringProfileController {
     if (!file) {
       throw new BadRequestException('No file was uploaded.');
     }
-    return this.service.addImage(profileId, file.buffer, acknowledgeWarning === 'true');
+    return this.service.addImage(
+      profileId,
+      file.buffer,
+      acknowledgeWarning === 'true',
+    );
   }
 
   @Post(':id/images/recalculate-quality')
@@ -78,7 +87,10 @@ export class MonitoringProfileController {
 
   @Delete(':id/images/:imageId')
   @HttpCode(204)
-  removeImage(@Param('id') profileId: string, @Param('imageId') imageId: string) {
+  removeImage(
+    @Param('id') profileId: string,
+    @Param('imageId') imageId: string,
+  ) {
     return this.service.removeImage(profileId, imageId);
   }
 }

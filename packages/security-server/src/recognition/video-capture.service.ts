@@ -13,7 +13,9 @@ export class VideoCaptureService {
   private readonly logger = new Logger(VideoCaptureService.name);
 
   buildRtspUrl({ host, port, path, username, password }: RtspConfig): string {
-    const auth = username ? `${encodeURIComponent(username)}${password ? ':' + encodeURIComponent(password) : ''}@` : '';
+    const auth = username
+      ? `${encodeURIComponent(username)}${password ? ':' + encodeURIComponent(password) : ''}@`
+      : '';
     const cleanPath = path ? (path.startsWith('/') ? path : `/${path}`) : '';
     return `rtsp://${auth}${host}:${port}${cleanPath}`;
   }
@@ -26,12 +28,21 @@ export class VideoCaptureService {
       capture = new cv.VideoCapture(url);
       const frame = capture.read();
       if (!frame || frame.empty) {
-        return { reachable: false, error: 'Opened the source but could not read a frame from it.' };
+        return {
+          reachable: false,
+          error: 'Opened the source but could not read a frame from it.',
+        };
       }
       return { reachable: true, frame };
     } catch (error) {
       this.logger.warn(`Failed to capture frame from RTSP source: ${error}`);
-      return { reachable: false, error: error instanceof Error ? error.message : 'Unknown error opening video source.' };
+      return {
+        reachable: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Unknown error opening video source.',
+      };
     } finally {
       capture?.release();
     }

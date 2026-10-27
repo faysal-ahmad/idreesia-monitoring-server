@@ -26,6 +26,9 @@ import { AppService } from './app.service';
     ConfigurationModule,
     ErpModule,
   ],
-  providers: [AppService, { provide: APP_FILTER, useClass: PrismaExceptionFilter }],
+  providers: [
+    AppService,
+    { provide: APP_FILTER, useClass: PrismaExceptionFilter },
+  ],
 })
 export class AppModule {}

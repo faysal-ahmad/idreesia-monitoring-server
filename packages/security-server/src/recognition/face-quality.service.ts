@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import * as cv from '@u4/opencv4nodejs';
 import { DetectedFace } from './recognition.types';
 
-export type FaceQualitySignal = 'size' | 'confidence' | 'sharpness' | 'exposure' | 'pose';
+export type FaceQualitySignal =
+  'size' | 'confidence' | 'sharpness' | 'exposure' | 'pose';
 
 export interface FaceQuality {
   // 0-100, the weighted mean of the signals below.
@@ -76,7 +77,11 @@ export class FaceQualityService {
     let signals: Record<FaceQualitySignal, number>;
     try {
       signals = {
-        size: linear(Math.min(face.box.width, face.box.height), SIZE_MIN_PX, SIZE_MAX_PX),
+        size: linear(
+          Math.min(face.box.width, face.box.height),
+          SIZE_MIN_PX,
+          SIZE_MAX_PX,
+        ),
         confidence: linear(face.confidence, CONFIDENCE_MIN, CONFIDENCE_MAX),
         sharpness: this.sharpness(gray),
         exposure: this.exposure(gray),
@@ -105,13 +110,23 @@ export class FaceQualityService {
     mean.release();
     stddev.release();
     if (variance <= 0) return 0;
-    return linear(Math.log10(variance), Math.log10(SHARPNESS_MIN_VARIANCE), Math.log10(SHARPNESS_MAX_VARIANCE));
+    return linear(
+      Math.log10(variance),
+      Math.log10(SHARPNESS_MIN_VARIANCE),
+      Math.log10(SHARPNESS_MAX_VARIANCE),
+    );
   }
 
   private exposure(gray: cv.Mat): number {
     const { mean, stddev } = gray.meanStdDev();
-    const brightness = clamp01(1 - Math.abs(mean.at(0, 0) - BRIGHTNESS_IDEAL) / BRIGHTNESS_TOLERANCE);
-    const contrast = linear(stddev.at(0, 0), CONTRAST_MIN_STDDEV, CONTRAST_MAX_STDDEV);
+    const brightness = clamp01(
+      1 - Math.abs(mean.at(0, 0) - BRIGHTNESS_IDEAL) / BRIGHTNESS_TOLERANCE,
+    );
+    const contrast = linear(
+      stddev.at(0, 0),
+      CONTRAST_MIN_STDDEV,
+      CONTRAST_MAX_STDDEV,
+    );
     mean.release();
     stddev.release();
     return Math.min(brightness, contrast);
@@ -128,17 +143,31 @@ export class FaceQualityService {
     // Unit vectors along and perpendicular to the eye line, so the measures are roll-invariant.
     const ux = eyeDx / eyeDistance;
     const uy = eyeDy / eyeDistance;
-    const eyeMid = [(rightEye[0] + leftEye[0]) / 2, (rightEye[1] + leftEye[1]) / 2];
-    const mouthMid = [(rightMouth[0] + leftMouth[0]) / 2, (rightMouth[1] + leftMouth[1]) / 2];
-    const along = (p: number[]) => (p[0] - eyeMid[0]) * ux + (p[1] - eyeMid[1]) * uy;
-    const across = (p: number[]) => -(p[0] - eyeMid[0]) * uy + (p[1] - eyeMid[1]) * ux;
+    const eyeMid = [
+      (rightEye[0] + leftEye[0]) / 2,
+      (rightEye[1] + leftEye[1]) / 2,
+    ];
+    const mouthMid = [
+      (rightMouth[0] + leftMouth[0]) / 2,
+      (rightMouth[1] + leftMouth[1]) / 2,
+    ];
+    const along = (p: number[]) =>
+      (p[0] - eyeMid[0]) * ux + (p[1] - eyeMid[1]) * uy;
+    const across = (p: number[]) =>
+      -(p[0] - eyeMid[0]) * uy + (p[1] - eyeMid[1]) * ux;
 
-    const yaw = clamp01(1 - Math.abs(along(nose) / eyeDistance) / YAW_MAX_RATIO);
+    const yaw = clamp01(
+      1 - Math.abs(along(nose) / eyeDistance) / YAW_MAX_RATIO,
+    );
     const mouthDepth = across(mouthMid);
     const pitch =
       mouthDepth <= 0
         ? 0
-        : clamp01(1 - Math.abs(across(nose) / mouthDepth - PITCH_FRONTAL_RATIO) / PITCH_MAX_DEVIATION);
+        : clamp01(
+            1 -
+              Math.abs(across(nose) / mouthDepth - PITCH_FRONTAL_RATIO) /
+                PITCH_MAX_DEVIATION,
+          );
     return Math.min(yaw, pitch);
   }
 }

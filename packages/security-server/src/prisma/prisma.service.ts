@@ -26,7 +26,10 @@ const pool = new Pool({
 });
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   constructor() {
     super({ adapter: new PrismaPg(pool, { schema: 'security_server' }) });
   }

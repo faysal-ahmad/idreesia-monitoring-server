@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { VideoFeedSource } from '@prisma/client';
 import * as cv from '@u4/opencv4nodejs';
 import { MediaServerService } from '../media-server/media-server.service';
@@ -50,15 +55,23 @@ interface ChannelLoop {
 }
 
 function backoffMs(attempt: number): number {
-  return Math.min(RECONNECT_BACKOFF_MIN_MS * 2 ** Math.max(0, attempt - 1), RECONNECT_BACKOFF_MAX_MS);
+  return Math.min(
+    RECONNECT_BACKOFF_MIN_MS * 2 ** Math.max(0, attempt - 1),
+    RECONNECT_BACKOFF_MAX_MS,
+  );
 }
 
 // Sleeps in short slices so a stopped loop (channel disabled, app shutting down) exits promptly
 // instead of finishing a backoff of up to a minute first.
-async function sleepUnlessStopped(loop: ChannelLoop, ms: number): Promise<void> {
+async function sleepUnlessStopped(
+  loop: ChannelLoop,
+  ms: number,
+): Promise<void> {
   const until = Date.now() + ms;
   while (!loop.stopped && Date.now() < until) {
-    await new Promise((resolve) => setTimeout(resolve, Math.min(500, until - Date.now())));
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min(500, until - Date.now())),
+    );
   }
 }
 
@@ -93,13 +106,19 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    await Promise.all(Array.from(this.loops.values()).map((loop) => this.stopLoop(loop)));
+    await Promise.all(
+      Array.from(this.loops.values()).map((loop) => this.stopLoop(loop)),
+    );
   }
 
   async reconcile() {
     const seqAtRead = this.disableSeq;
-    const enabledChannels = await this.prisma.videoFeedSource.findMany({ where: { enabled: true, deletedAt: null } });
-    const enabledById = new Map(enabledChannels.map((channel) => [channel.id, channel]));
+    const enabledChannels = await this.prisma.videoFeedSource.findMany({
+      where: { enabled: true, deletedAt: null },
+    });
+    const enabledById = new Map(
+      enabledChannels.map((channel) => [channel.id, channel]),
+    );
     // Streams first, so loops (re)opening below find them. If go2rtc is unreachable, loops just
     // keep retrying and the periodic resync adds the streams once it's back.
     await this.mediaServer.sync(enabledChannels);
@@ -126,7 +145,10 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
       // Already running — refresh the in-memory snapshot so name/similarityThreshold/recognitionFps changes
       // take effect immediately. If the connection details changed, go2rtc's stream source was
       // just updated by sync() above; reconnect so the loop reads from the new camera source.
-      const configChanged = !configsEqual(existingLoop.channel.config, channel.config);
+      const configChanged = !configsEqual(
+        existingLoop.channel.config,
+        channel.config,
+      );
       existingLoop.channel = channel;
       if (configChanged && existingLoop.capture) {
         existingLoop.capture.release();
@@ -141,7 +163,8 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     return Array.from(this.loops.values())
       .map(({ channel, lastFrameAt, reconnectAttempts }) => {
         let status: ChannelHealthStatus = 'offline';
-        if (lastFrameAt && now - lastFrameAt < FRAME_STALE_MS) status = 'online';
+        if (lastFrameAt && now - lastFrameAt < FRAME_STALE_MS)
+          status = 'online';
         else if (!lastFrameAt && reconnectAttempts === 0) status = 'connecting';
         return {
           channelId: channel.id,
@@ -166,7 +189,9 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     };
     loop.donePromise = this.superviseLoop(loop);
     this.loops.set(channel.id, loop);
-    this.logger.log(`Starting ingestion loop for channel "${channel.name}" (${channel.id})`);
+    this.logger.log(
+      `Starting ingestion loop for channel "${channel.name}" (${channel.id})`,
+    );
   }
 
   // Restarts a loop that died on an unexpected error. Otherwise the channel would sit dead until
@@ -194,18 +219,25 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
   private async stopLoop(loop: ChannelLoop) {
     loop.stopped = true;
     await loop.donePromise;
-    this.logger.log(`Stopped ingestion loop for channel "${loop.channel.name}" (${loop.channel.id})`);
+    this.logger.log(
+      `Stopped ingestion loop for channel "${loop.channel.name}" (${loop.channel.id})`,
+    );
   }
 
   private async runLoop(loop: ChannelLoop) {
     while (!loop.stopped) {
       if (!loop.capture) {
         try {
-          loop.capture = new cv.VideoCapture(this.mediaServer.restreamUrl(loop.channel.id));
+          loop.capture = new cv.VideoCapture(
+            this.mediaServer.restreamUrl(loop.channel.id),
+          );
         } catch (error) {
           loop.reconnectAttempts++;
           if (loop.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-            await this.disableUnreachableChannel(loop, `failed to open stream: ${error}`);
+            await this.disableUnreachableChannel(
+              loop,
+              `failed to open stream: ${error}`,
+            );
             break;
           }
           const delay = backoffMs(loop.reconnectAttempts);
@@ -223,20 +255,27 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
       try {
         frame = await loop.capture.readAsync();
       } catch (error) {
-        this.logger.warn(`Channel "${loop.channel.name}": read error: ${error}`);
+        this.logger.warn(
+          `Channel "${loop.channel.name}": read error: ${error}`,
+        );
       }
 
       if (!frame || frame.empty) {
         frame?.release();
         loop.consecutiveFailures++;
         if (loop.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-          this.logger.warn(`Channel "${loop.channel.name}": stream appears dropped — reconnecting`);
+          this.logger.warn(
+            `Channel "${loop.channel.name}": stream appears dropped — reconnecting`,
+          );
           loop.capture.release();
           loop.capture = undefined;
           loop.consecutiveFailures = 0;
           loop.reconnectAttempts++;
           if (loop.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-            await this.disableUnreachableChannel(loop, 'stream keeps dropping without delivering frames');
+            await this.disableUnreachableChannel(
+              loop,
+              'stream keeps dropping without delivering frames',
+            );
             break;
           }
           await sleepUnlessStopped(loop, backoffMs(loop.reconnectAttempts));
@@ -257,7 +296,11 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
         loop.processing = true;
         this.alertPipeline
           .processFrame(loop.channel, downscaled)
-          .catch((error) => this.logger.warn(`Channel "${loop.channel.name}": frame processing error: ${error}`))
+          .catch((error) =>
+            this.logger.warn(
+              `Channel "${loop.channel.name}": frame processing error: ${error}`,
+            ),
+          )
           .finally(() => {
             downscaled.release();
             loop.processing = false;
@@ -286,12 +329,17 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     let disabled = false;
     try {
       // A change here like any other, so the next sync passes it on to the ERP.
-      await this.prisma.videoFeedSource.update({ where: { id: channel.id }, data: { enabled: false } });
+      await this.prisma.videoFeedSource.update({
+        where: { id: channel.id },
+        data: { enabled: false },
+      });
       disabled = true;
     } catch (error) {
       // Still stop the loop. The channel stays enabled in the DB, so it's retried on the next
       // reconcile (startup or /system/reload); until then it has no loop and no health entry.
-      this.logger.error(`Channel "${channel.name}": failed to mark it disabled: ${error}`);
+      this.logger.error(
+        `Channel "${channel.name}": failed to mark it disabled: ${error}`,
+      );
     }
     if (disabled) this.selfDisabled.set(channel.id, ++this.disableSeq);
     if (this.loops.get(channel.id) === loop) this.loops.delete(channel.id);
@@ -300,7 +348,11 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     if (disabled) {
       this.mediaServer
         .syncEnabledChannels()
-        .catch((error) => this.logger.warn(`Channel "${channel.name}": stream sync after disabling failed: ${error}`));
+        .catch((error) =>
+          this.logger.warn(
+            `Channel "${channel.name}": stream sync after disabling failed: ${error}`,
+          ),
+        );
     }
   }
 }

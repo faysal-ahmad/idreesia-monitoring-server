@@ -1,7 +1,16 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
-import { AdminSessionService, readCookie, SESSION_COOKIE } from './admin-session.service';
+import {
+  AdminSessionService,
+  readCookie,
+  SESSION_COOKIE,
+} from './admin-session.service';
 import { IS_PUBLIC_KEY } from './public.decorator';
 
 // Registered globally (APP_GUARD), so a new controller is admin-only unless marked @Public().
@@ -20,7 +29,12 @@ export class AdminAuthGuard implements CanActivate {
     if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest<Request>();
-    if (this.sessions.verifyToken(readCookie(request.headers.cookie, SESSION_COOKIE))) return true;
+    if (
+      this.sessions.verifyToken(
+        readCookie(request.headers.cookie, SESSION_COOKIE),
+      )
+    )
+      return true;
     throw new UnauthorizedException('Admin login required.');
   }
 }

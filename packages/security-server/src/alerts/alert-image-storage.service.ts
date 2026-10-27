@@ -7,14 +7,16 @@ import { join } from 'node:path';
 const DEFAULT_ALERT_IMAGES_DIR = '/data/alert-images';
 // <uuid>.jpg — the only names save() ever produces, so anything else in a request is rejected
 // outright (which also rules out path traversal).
-const FILE_NAME_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$/;
+const FILE_NAME_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$/;
 
 // Alert frame images live on disk rather than in Postgres; Alert.imageFile holds the file name.
 // The directory is a Docker volume in development and a host folder in production.
 @Injectable()
 export class AlertImageStorageService implements OnModuleInit {
   private readonly logger = new Logger(AlertImageStorageService.name);
-  private readonly dir = process.env.ALERT_IMAGES_DIR || DEFAULT_ALERT_IMAGES_DIR;
+  private readonly dir =
+    process.env.ALERT_IMAGES_DIR || DEFAULT_ALERT_IMAGES_DIR;
 
   async onModuleInit() {
     await mkdir(this.dir, { recursive: true });
@@ -60,7 +62,9 @@ export class AlertImageStorageService implements OnModuleInit {
         try {
           await rm(join(this.dir, fileName), { force: true });
         } catch (error) {
-          this.logger.warn(`Failed to delete alert image ${fileName}: ${error}`);
+          this.logger.warn(
+            `Failed to delete alert image ${fileName}: ${error}`,
+          );
         }
       }),
     );

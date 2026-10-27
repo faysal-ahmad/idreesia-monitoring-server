@@ -21,7 +21,10 @@ async function bootstrap() {
 // every channel's ingestion with it: log it and keep running. Node's default is to exit on both.
 // Native crashes (OpenCV, ONNX) can't be caught here; Docker's restart policy covers those.
 process.on('unhandledRejection', (reason) => {
-  Logger.error(`Unhandled promise rejection: ${reason instanceof Error ? reason.stack : reason}`, 'Process');
+  Logger.error(
+    `Unhandled promise rejection: ${reason instanceof Error ? reason.stack : reason}`,
+    'Process',
+  );
 });
 process.on('uncaughtException', (error) => {
   Logger.error(`Uncaught exception: ${error.stack ?? error}`, 'Process');
@@ -30,6 +33,9 @@ process.on('uncaughtException', (error) => {
 // A failed startup, by contrast, exits so Docker restarts it, rather than lingering half-started
 // (which the handlers above would otherwise allow).
 bootstrap().catch((error) => {
-  Logger.error(`Startup failed: ${error instanceof Error ? error.stack : error}`, 'Process');
+  Logger.error(
+    `Startup failed: ${error instanceof Error ? error.stack : error}`,
+    'Process',
+  );
   process.exit(1);
 });

@@ -40,7 +40,9 @@ export class FaceMatchCacheService implements OnModuleInit {
 
   async refresh() {
     const { includeTestProfilesInAlerts } = await this.configuration.getAll();
-    const rows = await this.prisma.$queryRaw<{ profileId: string; profileName: string; embedding: string }[]>`
+    const rows = await this.prisma.$queryRaw<
+      { profileId: string; profileName: string; embedding: string }[]
+    >`
       SELECT mpi."profileId" as "profileId", mp.name as "profileName", mpi.embedding::text as embedding
       FROM security_server."MonitoringProfileImage" mpi
       JOIN security_server."MonitoringProfile" mp ON mp.id = mpi."profileId"
@@ -62,9 +64,16 @@ export class FaceMatchCacheService implements OnModuleInit {
   findBestMatch(embedding: number[], threshold: number): MatchResult | null {
     let best: MatchResult | null = null;
     for (const entry of this.cache) {
-      const score = this.faceRecognition.cosineSimilarity(embedding, entry.embedding);
+      const score = this.faceRecognition.cosineSimilarity(
+        embedding,
+        entry.embedding,
+      );
       if (score >= threshold && (!best || score > best.score)) {
-        best = { profileId: entry.profileId, profileName: entry.profileName, score };
+        best = {
+          profileId: entry.profileId,
+          profileName: entry.profileName,
+          score,
+        };
       }
     }
     return best;

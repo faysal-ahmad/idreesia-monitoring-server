@@ -10,7 +10,12 @@ import { AlertService } from './alert.service';
 @Module({
   imports: [ConfigurationModule],
   controllers: [AlertController, AlertImageController],
-  providers: [AlertService, AlertRetentionService, AlertEventsService, AlertImageStorageService],
+  providers: [
+    AlertService,
+    AlertRetentionService,
+    AlertEventsService,
+    AlertImageStorageService,
+  ],
   // AlertService for the pipeline that creates alerts; AlertEventsService and
   // AlertImageStorageService for other code that removes alerts in bulk (resync + file cleanup).
   exports: [AlertService, AlertEventsService, AlertImageStorageService],

@@ -7,7 +7,7 @@ services:
       - ${POSTGRES_DATA_HOST_DIR:-/data/postgres/data}:/var/lib/postgresql:cached
       - ./configs/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U idreesia"]
+      test: ['CMD-SHELL', 'pg_isready -U idreesia']
       interval: 5s
       timeout: 5s
       retries: 20
@@ -47,7 +47,13 @@ services:
     # Any HTTP response counts as alive; only a refused connection or a timeout (a hung event loop)
     # fails. Docker only marks the container unhealthy - it doesn't restart it by itself.
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/erp/status',{signal:AbortSignal.timeout(8000)}).then(()=>process.exit(0),()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/erp/status',{signal:AbortSignal.timeout(8000)}).then(()=>process.exit(0),()=>process.exit(1))",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -64,7 +70,7 @@ services:
     depends_on:
       - security-server
     ports:
-      - "80:4200"
+      - '80:4200'
     restart: unless-stopped
 
 volumes:

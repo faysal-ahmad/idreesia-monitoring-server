@@ -44,11 +44,18 @@ export const CONFIG_DEFINITIONS = {
 };
 
 export type ConfigKey = keyof typeof CONFIG_DEFINITIONS;
-export type ConfigValues = { [K in ConfigKey]: (typeof CONFIG_DEFINITIONS)[K]['default'] };
+export type ConfigValues = {
+  [K in ConfigKey]: (typeof CONFIG_DEFINITIONS)[K]['default'];
+};
 
 export const UpdateConfigurationSchema = z.object(
   Object.fromEntries(
-    Object.entries(CONFIG_DEFINITIONS).map(([key, definition]) => [key, definition.schema.optional()]),
-  ) as { [K in ConfigKey]: z.ZodOptional<(typeof CONFIG_DEFINITIONS)[K]['schema']> },
+    Object.entries(CONFIG_DEFINITIONS).map(([key, definition]) => [
+      key,
+      definition.schema.optional(),
+    ]),
+  ) as {
+    [K in ConfigKey]: z.ZodOptional<(typeof CONFIG_DEFINITIONS)[K]['schema']>;
+  },
 );
 export type UpdateConfigurationDto = Partial<ConfigValues>;

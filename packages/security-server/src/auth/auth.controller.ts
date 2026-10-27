@@ -11,13 +11,22 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { AdminSessionService, readCookie, SESSION_COOKIE, SESSION_TTL_MS } from './admin-session.service';
+import {
+  AdminSessionService,
+  readCookie,
+  SESSION_COOKIE,
+  SESSION_TTL_MS,
+} from './admin-session.service';
 import { LoginSchema } from './auth.schema';
 import { Public } from './public.decorator';
 
 // HttpOnly so page scripts can't read it; SameSite=Strict so other sites can't ride on it. Not
 // Secure, since the UI is also served over plain HTTP on the local network.
-const COOKIE_OPTIONS = { httpOnly: true, sameSite: 'strict', path: '/' } as const;
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'strict',
+  path: '/',
+} as const;
 
 @Controller('auth')
 export class AuthController {
@@ -26,21 +35,32 @@ export class AuthController {
   @Public()
   @Get('session')
   session(@Req() request: Request) {
-    return { authenticated: this.sessions.verifyToken(readCookie(request.headers.cookie, SESSION_COOKIE)) };
+    return {
+      authenticated: this.sessions.verifyToken(
+        readCookie(request.headers.cookie, SESSION_COOKIE),
+      ),
+    };
   }
 
   @Public()
   @Post('login')
   @HttpCode(204)
   login(
-    @Body(new ZodValidationPipe(LoginSchema)) dto: ReturnType<typeof LoginSchema.parse>,
+    @Body(new ZodValidationPipe(LoginSchema))
+    dto: ReturnType<typeof LoginSchema.parse>,
     @Res({ passthrough: true }) response: Response,
   ) {
     if (!this.sessions.isConfigured) {
-      throw new ServiceUnavailableException('Admin password is not configured on the server.');
+      throw new ServiceUnavailableException(
+        'Admin password is not configured on the server.',
+      );
     }
-    if (!this.sessions.checkPassword(dto.password)) throw new UnauthorizedException('Incorrect password.');
-    response.cookie(SESSION_COOKIE, this.sessions.createToken(), { ...COOKIE_OPTIONS, maxAge: SESSION_TTL_MS });
+    if (!this.sessions.checkPassword(dto.password))
+      throw new UnauthorizedException('Incorrect password.');
+    response.cookie(SESSION_COOKIE, this.sessions.createToken(), {
+      ...COOKIE_OPTIONS,
+      maxAge: SESSION_TTL_MS,
+    });
   }
 
   @Public()

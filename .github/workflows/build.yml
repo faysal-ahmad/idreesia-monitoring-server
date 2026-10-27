@@ -47,5 +47,5 @@ jobs:
       - run: yarn install --frozen-lockfile --ignore-scripts
       - run: yarn nx run @idreesia/security-server:prisma-generate
 
-      - run: yarn nx format:check
+      - run: yarn nx format:check --all
       - run: yarn nx run-many -t lint build typecheck

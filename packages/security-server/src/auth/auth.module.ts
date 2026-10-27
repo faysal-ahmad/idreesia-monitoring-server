@@ -6,6 +6,9 @@ import { AuthController } from './auth.controller';
 
 @Module({
   controllers: [AuthController],
-  providers: [AdminSessionService, { provide: APP_GUARD, useClass: AdminAuthGuard }],
+  providers: [
+    AdminSessionService,
+    { provide: APP_GUARD, useClass: AdminAuthGuard },
+  ],
 })
 export class AuthModule {}

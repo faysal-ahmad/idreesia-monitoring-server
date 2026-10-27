@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { filter, Subscription } from 'rxjs';
 import { AlertEventsService } from '../alerts/alert-events.service';
@@ -36,12 +41,17 @@ export class ErpAlertPushService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     if (!this.client.configured) return;
     this.subscriptions.push(
-      this.events.events$.pipe(filter((event) => event.type === 'created')).subscribe(() => void this.pushPending()),
-      this.configuration.changes$.subscribe(({ erpAlertRetryIntervalMinutes }) =>
-        this.schedule(erpAlertRetryIntervalMinutes),
+      this.events.events$
+        .pipe(filter((event) => event.type === 'created'))
+        .subscribe(() => void this.pushPending()),
+      this.configuration.changes$.subscribe(
+        ({ erpAlertRetryIntervalMinutes }) =>
+          this.schedule(erpAlertRetryIntervalMinutes),
       ),
     );
-    this.schedule((await this.configuration.getAll()).erpAlertRetryIntervalMinutes);
+    this.schedule(
+      (await this.configuration.getAll()).erpAlertRetryIntervalMinutes,
+    );
     void this.pushPending();
   }
 
@@ -75,7 +85,12 @@ export class ErpAlertPushService implements OnModuleInit, OnModuleDestroy {
   }
 
   private schedule(minutes: number) {
-    replaceInterval(this.scheduler, RETRY_INTERVAL_NAME, minutes, () => void this.pushPending());
+    replaceInterval(
+      this.scheduler,
+      RETRY_INTERVAL_NAME,
+      minutes,
+      () => void this.pushPending(),
+    );
   }
 
   private async run() {
@@ -99,31 +114,48 @@ export class ErpAlertPushService implements OnModuleInit, OnModuleDestroy {
 
     const image = await this.images.read(alert.imageFile);
     try {
-      await this.client.request('PUT', `/alerts/${encodeURIComponent(alert.id)}`, {
-        body: {
-          profileId: alert.monitoringProfileId,
-          channelId: alert.channelId,
-          timestamp: alert.timestamp.toISOString(),
-          similarityScore: alert.similarityScore,
-          image: image ? { mimeType: 'image/jpeg', data: image.toString('base64') } : null,
+      await this.client.request(
+        'PUT',
+        `/alerts/${encodeURIComponent(alert.id)}`,
+        {
+          body: {
+            profileId: alert.monitoringProfileId,
+            channelId: alert.channelId,
+            timestamp: alert.timestamp.toISOString(),
+            similarityScore: alert.similarityScore,
+            image: image
+              ? { mimeType: 'image/jpeg', data: image.toString('base64') }
+              : null,
+          },
         },
-      });
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       // The ERP refused this alert itself — its profile or channel hasn't been synced to the ERP yet,
       // or its image file is missing: keep it pending with the reason and carry on with the rest,
       // rather than holding up every later alert. It's retried after the next sync.
-      if (error instanceof ErpRequestError && (error.status === 400 || error.status === 422)) {
-        await this.prisma.alert.updateMany({ where: { id }, data: { erpSyncError: message } });
+      if (
+        error instanceof ErpRequestError &&
+        (error.status === 400 || error.status === 422)
+      ) {
+        await this.prisma.alert.updateMany({
+          where: { id },
+          data: { erpSyncError: message },
+        });
         this.logger.warn(`Alert ${id} was not accepted by the ERP: ${message}`);
         return 'rejected';
       }
       this.lastError = message;
-      this.logger.warn(`Could not send alerts to the ERP, will retry: ${message}`);
+      this.logger.warn(
+        `Could not send alerts to the ERP, will retry: ${message}`,
+      );
       return 'unreachable';
     }
 
-    await this.prisma.alert.updateMany({ where: { id }, data: { erpSyncStatus: 'SENT', erpSyncError: null } });
+    await this.prisma.alert.updateMany({
+      where: { id },
+      data: { erpSyncStatus: 'SENT', erpSyncError: null },
+    });
     return 'sent';
   }
 }

@@ -10,7 +10,7 @@ services:
       - postgres-dev:/var/lib/postgresql:cached
       - ./configs/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U idreesia"]
+      test: ['CMD-SHELL', 'pg_isready -U idreesia']
       interval: 5s
       timeout: 5s
       retries: 20
@@ -28,10 +28,10 @@ services:
     environment:
       # sslmode=disable: the postgres container has no TLS at all, and Prisma's query engine still
       # attempts (and fails) a TLS handshake against bookworm's OpenSSL 3 unless told not to.
-      DATABASE_URL: "postgresql://idreesia:idreesia@postgres:5432/idreesia?schema=security_server&sslmode=disable"
+      DATABASE_URL: 'postgresql://idreesia:idreesia@postgres:5432/idreesia?schema=security_server&sslmode=disable'
       # Read RTSP over TCP in OpenCV's FFmpeg backend — over UDP, lost RTP packets make reads
       # silently return empty frames.
-      OPENCV_FFMPEG_CAPTURE_OPTIONS: "rtsp_transport;tcp"
+      OPENCV_FFMPEG_CAPTURE_OPTIONS: 'rtsp_transport;tcp'
       # Password for the admin pages (everything except Alerts).
       ADMIN_PASSWORD: admin
       # The ERP (idreesia-erp's dev stack on the host), which owns channels and profiles and
@@ -78,7 +78,7 @@ services:
     depends_on:
       - security-server
     ports:
-      - "4200:4200"
+      - '4200:4200'
     environment:
       # Own Nx workspace data, see security-server above.
       NX_WORKSPACE_DATA_DIRECTORY: /nx-workspace-data

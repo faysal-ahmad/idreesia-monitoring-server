@@ -26,13 +26,18 @@ export class AlertRetentionService {
     // Alerts not yet delivered to the ERP are kept until they are, however old.
     const where = { timestamp: { lt: cutoff }, erpSyncStatus: 'SENT' as const };
     // Only rows already past the cutoff match, so nothing new can slip in between these two queries.
-    const expired = await this.prisma.alert.findMany({ where, select: { imageFile: true } });
+    const expired = await this.prisma.alert.findMany({
+      where,
+      select: { imageFile: true },
+    });
     const { count } = await this.prisma.alert.deleteMany({ where });
     await this.images.remove(expired.map((alert) => alert.imageFile));
 
     if (count > 0) {
       this.events.emit({ type: 'resync' });
-      this.logger.log(`Purged ${count} alert(s) older than ${alertsRetentionDays} day(s)`);
+      this.logger.log(
+        `Purged ${count} alert(s) older than ${alertsRetentionDays} day(s)`,
+      );
     }
   }
 }

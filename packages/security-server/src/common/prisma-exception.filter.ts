@@ -1,4 +1,10 @@
-import { ArgumentsHost, Catch, ConflictException, ExceptionFilter, NotFoundException } from '@nestjs/common';
+import {
+  ArgumentsHost,
+  Catch,
+  ConflictException,
+  ExceptionFilter,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Response } from 'express';
 
@@ -14,13 +20,17 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       const httpException = new ConflictException(
         'This record cannot be deleted because other records still reference it.',
       );
-      response.status(httpException.getStatus()).json(httpException.getResponse());
+      response
+        .status(httpException.getStatus())
+        .json(httpException.getResponse());
       return;
     }
 
     if (exception.code === 'P2025') {
       const httpException = new NotFoundException('Record not found.');
-      response.status(httpException.getStatus()).json(httpException.getResponse());
+      response
+        .status(httpException.getStatus())
+        .json(httpException.getResponse());
       return;
     }
 

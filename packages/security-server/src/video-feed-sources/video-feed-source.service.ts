@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, VideoFeedSource } from '@prisma/client';
 import { parsePgVector } from '../common/pgvector.util';
 import { MediaServerService } from '../media-server/media-server.service';
@@ -12,7 +17,11 @@ import {
   redactConfig,
   RtspConfigSchema,
 } from './video-feed-source-config.schema';
-import { CreateVideoFeedSourceDto, UpdateVideoFeedSourceDto, VerifyVideoFeedSourceDto } from './video-feed-source.schema';
+import {
+  CreateVideoFeedSourceDto,
+  UpdateVideoFeedSourceDto,
+  VerifyVideoFeedSourceDto,
+} from './video-feed-source.schema';
 
 const ACTIVE = { deletedAt: null };
 
@@ -35,7 +44,10 @@ export class VideoFeedSourceService {
   ) {}
 
   private serialize(source: VideoFeedSource) {
-    return { ...source, config: redactConfig(source.config as Record<string, unknown>) };
+    return {
+      ...source,
+      config: redactConfig(source.config as Record<string, unknown>),
+    };
   }
 
   async list() {
@@ -46,7 +58,10 @@ export class VideoFeedSourceService {
     });
     return sources.map((source) => {
       const { _count, ...rest } = source;
-      return { ...this.serialize(rest as VideoFeedSource), alertCount: _count.alerts };
+      return {
+        ...this.serialize(rest as VideoFeedSource),
+        alertCount: _count.alerts,
+      };
     });
   }
 
@@ -55,7 +70,9 @@ export class VideoFeedSourceService {
   }
 
   private async findRaw(id: string): Promise<VideoFeedSource> {
-    const source = await this.prisma.videoFeedSource.findFirst({ where: { id, ...ACTIVE } });
+    const source = await this.prisma.videoFeedSource.findFirst({
+      where: { id, ...ACTIVE },
+    });
     if (!source) throw new NotFoundException('Video feed source not found.');
     return source;
   }
@@ -74,7 +91,12 @@ export class VideoFeedSourceService {
   async update(id: string, dto: UpdateVideoFeedSourceDto) {
     const existing = await this.findRaw(id);
     const config = dto.config
-      ? parseRtspConfig(mergeStoredCredentials(existing.config as Record<string, unknown>, dto.config))
+      ? parseRtspConfig(
+          mergeStoredCredentials(
+            existing.config as Record<string, unknown>,
+            dto.config,
+          ),
+        )
       : (existing.config as Record<string, unknown>);
 
     const updated = await this.prisma.videoFeedSource.update({
@@ -84,7 +106,9 @@ export class VideoFeedSourceService {
         config: config as Prisma.InputJsonValue,
         enabled: dto.enabled ?? existing.enabled,
         similarityThreshold:
-          dto.similarityThreshold === undefined ? existing.similarityThreshold : dto.similarityThreshold,
+          dto.similarityThreshold === undefined
+            ? existing.similarityThreshold
+            : dto.similarityThreshold,
         recognitionFps: dto.recognitionFps ?? existing.recognitionFps,
       },
     });
@@ -96,11 +120,16 @@ export class VideoFeedSourceService {
     // Checked up front: the Alert FK (onDelete: Restrict) would block it anyway, but through the pg
     // driver adapter that surfaces as an untyped error the PrismaExceptionFilter can't map to a 409.
     if ((await this.prisma.alert.count({ where: { channelId: id } })) > 0) {
-      throw new ConflictException('This channel has alert history and cannot be deleted.');
+      throw new ConflictException(
+        'This channel has alert history and cannot be deleted.',
+      );
     }
     if (existing.externalId) {
       // Kept until the next sync tells the ERP.
-      await this.prisma.videoFeedSource.update({ where: { id }, data: { deletedAt: new Date() } });
+      await this.prisma.videoFeedSource.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
     } else {
       // Never reached the ERP, so there's nothing to tell it.
       await this.prisma.videoFeedSource.delete({ where: { id } });
@@ -109,14 +138,23 @@ export class VideoFeedSourceService {
 
   async verify(dto: VerifyVideoFeedSourceDto) {
     const incoming = dto.channelId
-      ? mergeStoredCredentials((await this.findRaw(dto.channelId)).config as Record<string, unknown>, dto.config)
+      ? mergeStoredCredentials(
+          (await this.findRaw(dto.channelId)).config as Record<string, unknown>,
+          dto.config,
+        )
       : dto.config;
     const parsed = RtspConfigSchema.safeParse(incoming);
     if (!parsed.success) {
-      throw new BadRequestException('The connection details are incomplete or invalid.');
+      throw new BadRequestException(
+        'The connection details are incomplete or invalid.',
+      );
     }
-    const result = this.videoCapture.captureFrame(this.videoCapture.buildRtspUrl(parsed.data));
-    return result.reachable ? { reachable: true } : { reachable: false, error: result.error };
+    const result = this.videoCapture.captureFrame(
+      this.videoCapture.buildRtspUrl(parsed.data),
+    );
+    return result.reachable
+      ? { reachable: true }
+      : { reachable: false, error: result.error };
   }
 
   async testMatch(id: string) {
@@ -129,15 +167,22 @@ export class VideoFeedSourceService {
         : this.videoCapture.buildRtspUrl(parseRtspConfig(source.config)),
     );
     if (!captureResult.reachable || !captureResult.frame) {
-      throw new BadRequestException(captureResult.error ?? 'Could not capture a frame from this channel.');
+      throw new BadRequestException(
+        captureResult.error ?? 'Could not capture a frame from this channel.',
+      );
     }
 
     const faces = this.faceDetection.detect(captureResult.frame);
     if (faces.length === 0) {
       throw new BadRequestException('No face detected in the captured frame.');
     }
-    const face = faces.reduce((best, current) => (current.confidence > best.confidence ? current : best));
-    const aligned = this.faceRecognition.align(captureResult.frame, face.landmarks);
+    const face = faces.reduce((best, current) =>
+      current.confidence > best.confidence ? current : best,
+    );
+    const aligned = this.faceRecognition.align(
+      captureResult.frame,
+      face.landmarks,
+    );
     const embedding = this.faceRecognition.embed(aligned);
 
     // Test-match calibration only ever compares against isTest profiles — real watch-list
@@ -149,20 +194,32 @@ export class VideoFeedSourceService {
       WHERE mp."isTest" = true AND mp."deletedAt" IS NULL AND mpi.embedding IS NOT NULL
     `;
 
-    const bestScoreByProfile = new Map<string, { profileId: string; profileName: string; score: number }>();
+    const bestScoreByProfile = new Map<
+      string,
+      { profileId: string; profileName: string; score: number }
+    >();
     for (const row of testImages) {
       const storedEmbedding = parsePgVector(row.embedding);
-      const score = this.faceRecognition.cosineSimilarity(embedding, storedEmbedding);
+      const score = this.faceRecognition.cosineSimilarity(
+        embedding,
+        storedEmbedding,
+      );
       const existing = bestScoreByProfile.get(row.profileId);
       if (!existing || score > existing.score) {
-        bestScoreByProfile.set(row.profileId, { profileId: row.profileId, profileName: row.profileName, score });
+        bestScoreByProfile.set(row.profileId, {
+          profileId: row.profileId,
+          profileName: row.profileName,
+          score,
+        });
       }
     }
 
     return {
       detectedFaceConfidence: face.confidence,
       currentSimilarityThreshold: source.similarityThreshold,
-      results: Array.from(bestScoreByProfile.values()).sort((a, b) => b.score - a.score),
+      results: Array.from(bestScoreByProfile.values()).sort(
+        (a, b) => b.score - a.score,
+      ),
     };
   }
 }

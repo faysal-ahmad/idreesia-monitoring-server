@@ -14,7 +14,8 @@ export class ConfigurationController {
 
   @Patch()
   update(
-    @Body(new ZodValidationPipe(UpdateConfigurationSchema)) dto: ReturnType<typeof UpdateConfigurationSchema.parse>,
+    @Body(new ZodValidationPipe(UpdateConfigurationSchema))
+    dto: ReturnType<typeof UpdateConfigurationSchema.parse>,
   ) {
     return this.service.update(dto);
   }

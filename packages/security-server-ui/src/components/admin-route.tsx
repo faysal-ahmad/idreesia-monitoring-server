@@ -7,7 +7,10 @@ import { authApi, SESSION_QUERY_KEY } from '../api/auth';
 const { Text } = Typography;
 
 export function useAdminSession() {
-  const { data, isLoading } = useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: authApi.session });
+  const { data, isLoading } = useQuery({
+    queryKey: SESSION_QUERY_KEY,
+    queryFn: authApi.session,
+  });
   return { isAdmin: data?.authenticated ?? false, isLoading };
 }
 
@@ -15,22 +18,41 @@ function AdminLoginForm() {
   const queryClient = useQueryClient();
   const loginMutation = useMutation({
     mutationFn: authApi.login,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY }),
   });
 
   return (
     <Flex justify="center" style={{ paddingTop: 48 }}>
       <Card title="Admin login" style={{ width: 360 }}>
-        <Form layout="vertical" onFinish={({ password }: { password: string }) => loginMutation.mutate(password)}>
-          <Form.Item name="password" label="Password" rules={[{ required: true, message: 'Password is required' }]}>
-            <Input.Password prefix={<LockOutlined />} autoFocus autoComplete="current-password" />
+        <Form
+          layout="vertical"
+          onFinish={({ password }: { password: string }) =>
+            loginMutation.mutate(password)
+          }
+        >
+          <Form.Item
+            name="password"
+            label="Password"
+            rules={[{ required: true, message: 'Password is required' }]}
+          >
+            <Input.Password
+              prefix={<LockOutlined />}
+              autoFocus
+              autoComplete="current-password"
+            />
           </Form.Item>
           {loginMutation.error && (
             <Form.Item>
               <Text type="danger">{loginMutation.error.message}</Text>
             </Form.Item>
           )}
-          <Button type="primary" htmlType="submit" block loading={loginMutation.isPending}>
+          <Button
+            type="primary"
+            htmlType="submit"
+            block
+            loading={loginMutation.isPending}
+          >
             Log in
           </Button>
         </Form>

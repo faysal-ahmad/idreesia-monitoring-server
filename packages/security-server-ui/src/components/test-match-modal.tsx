@@ -1,4 +1,13 @@
-import { App, Button, InputNumber, Modal, Progress, Space, Table, Typography } from 'antd';
+import {
+  App,
+  Button,
+  InputNumber,
+  Modal,
+  Progress,
+  Space,
+  Table,
+  Typography,
+} from 'antd';
 import { useState } from 'react';
 import { videoFeedSourcesApi } from '../api/video-feed-sources';
 import { TestMatchResult, VideoFeedSource } from '../api/types';
@@ -12,7 +21,12 @@ interface TestMatchModalProps {
   onThresholdSaved: () => void;
 }
 
-export function TestMatchModal({ open, channel, onClose, onThresholdSaved }: TestMatchModalProps) {
+export function TestMatchModal({
+  open,
+  channel,
+  onClose,
+  onThresholdSaved,
+}: TestMatchModalProps) {
   const { message } = App.useApp();
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<TestMatchResult | null>(null);
@@ -26,9 +40,14 @@ export function TestMatchModal({ open, channel, onClose, onThresholdSaved }: Tes
       const res = await videoFeedSourcesApi.testMatch(channel.id);
       setResult(res);
       const topScore = res.results[0]?.score;
-      setThreshold(res.currentSimilarityThreshold ?? (topScore !== undefined ? Number(topScore.toFixed(2)) : null));
+      setThreshold(
+        res.currentSimilarityThreshold ??
+          (topScore !== undefined ? Number(topScore.toFixed(2)) : null),
+      );
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Test match failed');
+      message.error(
+        error instanceof Error ? error.message : 'Test match failed',
+      );
     } finally {
       setRunning(false);
     }
@@ -38,11 +57,15 @@ export function TestMatchModal({ open, channel, onClose, onThresholdSaved }: Tes
     if (!channel || threshold === null) return;
     setSaving(true);
     try {
-      await videoFeedSourcesApi.update(channel.id, { similarityThreshold: threshold });
+      await videoFeedSourcesApi.update(channel.id, {
+        similarityThreshold: threshold,
+      });
       message.success('Similarity threshold saved');
       onThresholdSaved();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Failed to save threshold');
+      message.error(
+        error instanceof Error ? error.message : 'Failed to save threshold',
+      );
     } finally {
       setSaving(false);
     }
@@ -55,9 +78,16 @@ export function TestMatchModal({ open, channel, onClose, onThresholdSaved }: Tes
   };
 
   return (
-    <Modal title={`Test Match — ${channel?.name ?? ''}`} open={open} onCancel={handleClose} footer={null} destroyOnHidden>
+    <Modal
+      title={`Test Match — ${channel?.name ?? ''}`}
+      open={open}
+      onCancel={handleClose}
+      footer={null}
+      destroyOnHidden
+    >
       <Paragraph type="secondary">
-        Point this channel at someone enrolled as a <Text strong>test profile</Text>, then capture a frame to see the
+        Point this channel at someone enrolled as a{' '}
+        <Text strong>test profile</Text>, then capture a frame to see the
         computed similarity score. This does not trigger an alert.
       </Paragraph>
       <Space orientation="vertical" style={{ width: '100%' }} size="middle">
@@ -67,7 +97,10 @@ export function TestMatchModal({ open, channel, onClose, onThresholdSaved }: Tes
 
         {result && (
           <>
-            <Text type="secondary">Detected face confidence: {(result.detectedFaceConfidence * 100).toFixed(0)}%</Text>
+            <Text type="secondary">
+              Detected face confidence:{' '}
+              {(result.detectedFaceConfidence * 100).toFixed(0)}%
+            </Text>
             <Table
               size="small"
               pagination={false}
@@ -78,10 +111,14 @@ export function TestMatchModal({ open, channel, onClose, onThresholdSaved }: Tes
                 {
                   title: 'Cosine Similarity',
                   dataIndex: 'score',
-                  render: (score: number) => <Progress percent={Math.round(score * 100)} size="small" />,
+                  render: (score: number) => (
+                    <Progress percent={Math.round(score * 100)} size="small" />
+                  ),
                 },
               ]}
-              locale={{ emptyText: 'No test profiles with enrollment images yet.' }}
+              locale={{
+                emptyText: 'No test profiles with enrollment images yet.',
+              }}
             />
             <Space>
               <Text>Set channel similarity threshold:</Text>
@@ -92,7 +129,11 @@ export function TestMatchModal({ open, channel, onClose, onThresholdSaved }: Tes
                 value={threshold ?? undefined}
                 onChange={(v) => setThreshold(v)}
               />
-              <Button onClick={saveThreshold} loading={saving} disabled={threshold === null}>
+              <Button
+                onClick={saveThreshold}
+                loading={saving}
+                disabled={threshold === null}
+              >
                 Save
               </Button>
             </Space>

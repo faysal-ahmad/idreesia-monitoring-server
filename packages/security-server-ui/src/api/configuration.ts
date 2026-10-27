@@ -10,5 +10,6 @@ export interface UpdateConfigurationInput {
 
 export const configurationApi = {
   get: () => api.get<Configuration>('/configuration'),
-  update: (input: UpdateConfigurationInput) => api.patch<Configuration>('/configuration', input),
+  update: (input: UpdateConfigurationInput) =>
+    api.patch<Configuration>('/configuration', input),
 };
