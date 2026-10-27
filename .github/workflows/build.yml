@@ -41,18 +41,11 @@ jobs:
           node-version: 24
           cache: 'yarn'
 
-      # Same setup as packages/security-server/Dockerfile.production: compile @u4/opencv4nodejs
-      # against the apt-installed OpenCV instead of letting it auto-build OpenCV from source
-      - name: Install OpenCV
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libopencv-dev
-
-      - run: yarn install --frozen-lockfile
-        env:
-          OPENCV4NODEJS_DISABLE_AUTOBUILD: 1
-          OPENCV_INCLUDE_DIR: /usr/include/opencv4
-          OPENCV_LIB_DIR: /usr/lib/x86_64-linux-gnu
+      # --ignore-scripts skips the native @u4/opencv4nodejs build: OpenCV is only ever compiled
+      # in the Docker images, and lint/typecheck/build never load the addon. That also skips
+      # Prisma's postinstall, so generate the client explicitly for typecheck.
+      - run: yarn install --frozen-lockfile --ignore-scripts
+      - run: yarn nx run @idreesia/security-server:prisma-generate
 
       - run: yarn nx format:check
       - run: yarn nx run-many -t lint build typecheck
