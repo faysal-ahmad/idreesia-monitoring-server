@@ -41,7 +41,18 @@ jobs:
           node-version: 24
           cache: 'yarn'
 
+      # Same setup as packages/security-server/Dockerfile.production: compile @u4/opencv4nodejs
+      # against the apt-installed OpenCV instead of letting it auto-build OpenCV from source
+      - name: Install OpenCV
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libopencv-dev
+
       - run: yarn install --frozen-lockfile
+        env:
+          OPENCV4NODEJS_DISABLE_AUTOBUILD: 1
+          OPENCV_INCLUDE_DIR: /usr/include/opencv4
+          OPENCV_LIB_DIR: /usr/lib/x86_64-linux-gnu
 
       - run: yarn nx format:check
       - run: yarn nx run-many -t lint build typecheck
