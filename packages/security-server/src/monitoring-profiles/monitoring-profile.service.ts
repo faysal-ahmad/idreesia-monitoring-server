@@ -6,9 +6,18 @@ import { AlertImageStorageService } from '../alerts/alert-image-storage.service'
 import { vectorToSql } from '../common/pgvector.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaceDetectionService } from '../recognition/face-detection.service';
-import { FaceQuality, FaceQualityService } from '../recognition/face-quality.service';
-import { EMBEDDING_MODEL_VERSION, FaceRecognitionService } from '../recognition/face-recognition.service';
-import { CreateMonitoringProfileDto, UpdateMonitoringProfileDto } from './monitoring-profile.schema';
+import {
+  FaceQuality,
+  FaceQualityService,
+} from '../recognition/face-quality.service';
+import {
+  EMBEDDING_MODEL_VERSION,
+  FaceRecognitionService,
+} from '../recognition/face-recognition.service';
+import {
+  CreateMonitoringProfileDto,
+  UpdateMonitoringProfileDto,
+} from './monitoring-profile.schema';
 
 // Detection is run permissively so marginal faces are still surfaced as a warning rather
 // than silently missed; anything scoring below this isn't returned as a candidate face at all.
@@ -25,8 +34,16 @@ const SYNCED_DETECTION_SCORE_THRESHOLD = 0.3;
 
 export type ImageUploadResult =
   | { status: 'rejected'; reason: string }
-  | { status: 'warning'; reason: string; faceBox: { width: number; height: number }; confidence: number }
-  | { status: 'created'; image: { id: string; createdAt: Date; quality: FaceQuality } };
+  | {
+      status: 'warning';
+      reason: string;
+      faceBox: { width: number; height: number };
+      confidence: number;
+    }
+  | {
+      status: 'created';
+      image: { id: string; createdAt: Date; quality: FaceQuality };
+    };
 
 const ACTIVE = { deletedAt: null };
 
@@ -69,7 +86,9 @@ export class MonitoringProfileService {
 
     const imagesWithPreview = await Promise.all(
       profile.images.map(async (image) => {
-        const [row] = await this.prisma.$queryRaw<{ image: Uint8Array; quality: FaceQuality | null }[]>`
+        const [row] = await this.prisma.$queryRaw<
+          { image: Uint8Array; quality: FaceQuality | null }[]
+        >`
           SELECT image, quality FROM security_server."MonitoringProfileImage" WHERE id = ${image.id}
         `;
         return {
@@ -104,42 +123,65 @@ export class MonitoringProfileService {
     const profile = await this.ensureExists(id);
     if (profile.externalId) {
       // Kept until the next sync tells the ERP.
-      await this.prisma.monitoringProfile.update({ where: { id }, data: { deletedAt: new Date() } });
+      await this.prisma.monitoringProfile.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
       return;
     }
     // Never reached the ERP, so there's nothing to tell it: removed now. Cascades to its images
     // and alerts — the alerts' image files aren't in the DB, so they're collected first.
-    const alerts = await this.prisma.alert.findMany({ where: { monitoringProfileId: id }, select: { imageFile: true } });
+    const alerts = await this.prisma.alert.findMany({
+      where: { monitoringProfileId: id },
+      select: { imageFile: true },
+    });
     await this.prisma.monitoringProfile.delete({ where: { id } });
     await this.alertImages.remove(alerts.map((alert) => alert.imageFile));
     this.alertEvents.emit({ type: 'resync' });
   }
 
-  async addImage(profileId: string, fileBuffer: Buffer, acknowledgeWarning: boolean): Promise<ImageUploadResult> {
+  async addImage(
+    profileId: string,
+    fileBuffer: Buffer,
+    acknowledgeWarning: boolean,
+  ): Promise<ImageUploadResult> {
     await this.ensureExists(profileId);
 
     const decoded = cv.imdecode(fileBuffer);
     const faces = this.faceDetection.detect(decoded, DETECTION_SCORE_THRESHOLD);
 
     if (faces.length === 0) {
-      return { status: 'rejected', reason: 'No face was detected in this photo.' };
+      return {
+        status: 'rejected',
+        reason: 'No face was detected in this photo.',
+      };
     }
     if (faces.length > 1) {
-      return { status: 'rejected', reason: 'More than one face was detected — upload a photo of only this person.' };
+      return {
+        status: 'rejected',
+        reason:
+          'More than one face was detected — upload a photo of only this person.',
+      };
     }
 
     const [face] = faces;
     const minDimension = Math.min(face.box.width, face.box.height);
 
     if (minDimension < HARD_REJECT_MIN_PX) {
-      return { status: 'rejected', reason: 'The detected face is too small in this photo to produce a usable match.' };
+      return {
+        status: 'rejected',
+        reason:
+          'The detected face is too small in this photo to produce a usable match.',
+      };
     }
 
-    const isMarginal = minDimension < WARN_MIN_PX || face.confidence < CONFIDENT_SCORE_THRESHOLD;
+    const isMarginal =
+      minDimension < WARN_MIN_PX || face.confidence < CONFIDENT_SCORE_THRESHOLD;
     if (isMarginal && !acknowledgeWarning) {
       return {
         status: 'warning',
-        reason: 'This photo may produce a lower-quality match. Proceed anyway, or try a clearer photo.',
+        reason:
+          'This photo may produce a lower-quality match. Proceed anyway, or try a clearer photo.',
         faceBox: { width: face.box.width, height: face.box.height },
         confidence: face.confidence,
       };
@@ -154,7 +196,9 @@ export class MonitoringProfileService {
     });
     await this.touch(profileId);
 
-    const [created] = await this.prisma.$queryRaw<{ id: string; createdAt: Date }[]>`
+    const [created] = await this.prisma.$queryRaw<
+      { id: string; createdAt: Date }[]
+    >`
       SELECT id, "createdAt" FROM security_server."MonitoringProfileImage" WHERE id = ${id}
     `;
     return { status: 'created', image: { ...created, quality } };
@@ -163,20 +207,32 @@ export class MonitoringProfileService {
   // Re-scores every photo of a profile - run by hand from the UI, both for photos stored before
   // scoring existed and after the scoring constants are tuned. Only `quality` changes: not the
   // embedding (so not matching) and not updatedAt (quality isn't synced to the ERP).
-  async recalculateQuality(profileId: string): Promise<{ recalculated: number; notRated: number }> {
+  async recalculateQuality(
+    profileId: string,
+  ): Promise<{ recalculated: number; notRated: number }> {
     await this.ensureExists(profileId);
-    const rows = await this.prisma.$queryRaw<{ id: string; image: Uint8Array }[]>`
+    const rows = await this.prisma.$queryRaw<
+      { id: string; image: Uint8Array }[]
+    >`
       SELECT id, image FROM security_server."MonitoringProfileImage" WHERE "profileId" = ${profileId}
     `;
 
     let notRated = 0;
     for (const row of rows) {
       const decoded = cv.imdecode(Buffer.from(row.image));
-      const faces = this.faceDetection.detect(decoded, DETECTION_SCORE_THRESHOLD);
+      const faces = this.faceDetection.detect(
+        decoded,
+        DETECTION_SCORE_THRESHOLD,
+      );
       let quality: FaceQuality | null = null;
       if (faces.length > 0) {
-        const face = faces.reduce((best, current) => (current.confidence > best.confidence ? current : best));
-        quality = this.faceQuality.assess(face, this.faceRecognition.align(decoded, face.landmarks));
+        const face = faces.reduce((best, current) =>
+          current.confidence > best.confidence ? current : best,
+        );
+        quality = this.faceQuality.assess(
+          face,
+          this.faceRecognition.align(decoded, face.landmarks),
+        );
       } else {
         notRated++;
       }
@@ -200,11 +256,18 @@ export class MonitoringProfileService {
 
   // Embeds a photo synced from the ERP, with none of the upload checks above (the ERP checked it):
   // the most confident face found is used. null if there's no face at all.
-  computeSyncedImageEmbedding(fileBuffer: Buffer): { embedding: number[]; jpeg: Buffer; quality: FaceQuality } | null {
+  computeSyncedImageEmbedding(
+    fileBuffer: Buffer,
+  ): { embedding: number[]; jpeg: Buffer; quality: FaceQuality } | null {
     const decoded = cv.imdecode(fileBuffer);
-    const faces = this.faceDetection.detect(decoded, SYNCED_DETECTION_SCORE_THRESHOLD);
+    const faces = this.faceDetection.detect(
+      decoded,
+      SYNCED_DETECTION_SCORE_THRESHOLD,
+    );
     if (faces.length === 0) return null;
-    const face = faces.reduce((best, current) => (current.confidence > best.confidence ? current : best));
+    const face = faces.reduce((best, current) =>
+      current.confidence > best.confidence ? current : best,
+    );
     const aligned = this.faceRecognition.align(decoded, face.landmarks);
     return {
       embedding: this.faceRecognition.embed(aligned),
@@ -216,7 +279,15 @@ export class MonitoringProfileService {
   // embedding and quality null: a synced photo with no face found (see computeSyncedImageEmbedding).
   async insertImage(
     profileId: string,
-    { embedding, jpeg, quality }: { embedding: number[] | null; jpeg: Uint8Array; quality: FaceQuality | null },
+    {
+      embedding,
+      jpeg,
+      quality,
+    }: {
+      embedding: number[] | null;
+      jpeg: Uint8Array;
+      quality: FaceQuality | null;
+    },
     externalId: string | null = null,
   ): Promise<string> {
     const id = randomUUID();
@@ -230,11 +301,16 @@ export class MonitoringProfileService {
 
   // A photo change is a change to its profile as far as the ERP sync is concerned.
   private async touch(profileId: string) {
-    await this.prisma.monitoringProfile.update({ where: { id: profileId }, data: { updatedAt: new Date() } });
+    await this.prisma.monitoringProfile.update({
+      where: { id: profileId },
+      data: { updatedAt: new Date() },
+    });
   }
 
   private async ensureExists(id: string) {
-    const profile = await this.prisma.monitoringProfile.findFirst({ where: { id, ...ACTIVE } });
+    const profile = await this.prisma.monitoringProfile.findFirst({
+      where: { id, ...ACTIVE },
+    });
     if (!profile) throw new NotFoundException('Monitoring profile not found.');
     return profile;
   }

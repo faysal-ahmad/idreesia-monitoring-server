@@ -47,11 +47,22 @@ export class ErpClientService {
   }
 
   // `path` is relative to /api/security-server. Network failures reject with fetch's own error.
-  async request(method: string, path: string, options: RequestOptions = {}): Promise<Response> {
+  async request(
+    method: string,
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<Response> {
     if (!this.configured) {
-      throw new Error('The ERP connection is not configured (ERP_URL, ERP_USERNAME, ERP_PASSWORD).');
+      throw new Error(
+        'The ERP connection is not configured (ERP_URL, ERP_USERNAME, ERP_PASSWORD).',
+      );
     }
-    let response = await this.send(method, path, options, await this.getToken());
+    let response = await this.send(
+      method,
+      path,
+      options,
+      await this.getToken(),
+    );
     if (response.status === 401) {
       this.token = null;
       response = await this.send(method, path, options, await this.getToken());
@@ -65,7 +76,12 @@ export class ErpClientService {
     return response;
   }
 
-  private send(method: string, path: string, { body, headers }: RequestOptions, token: string) {
+  private send(
+    method: string,
+    path: string,
+    { body, headers }: RequestOptions,
+    token: string,
+  ) {
     return fetch(`${this.baseUrl}/api/security-server${path}`, {
       method,
       headers: {
@@ -79,7 +95,10 @@ export class ErpClientService {
   }
 
   private async getToken(): Promise<string> {
-    if (this.token && this.token.expiresAt - TOKEN_REFRESH_MARGIN_MS > Date.now()) {
+    if (
+      this.token &&
+      this.token.expiresAt - TOKEN_REFRESH_MARGIN_MS > Date.now()
+    ) {
       return this.token.value;
     }
     // Concurrent callers share one login.
@@ -93,13 +112,22 @@ export class ErpClientService {
     const response = await fetch(`${this.baseUrl}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: this.username, password: this.password }),
+      body: JSON.stringify({
+        username: this.username,
+        password: this.password,
+      }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) {
-      throw new ErpRequestError(response.status, `ERP login failed → ${response.status}: ${await readError(response)}`);
+      throw new ErpRequestError(
+        response.status,
+        `ERP login failed → ${response.status}: ${await readError(response)}`,
+      );
     }
-    const { token, tokenExpires } = (await response.json()) as { token: string; tokenExpires: string };
+    const { token, tokenExpires } = (await response.json()) as {
+      token: string;
+      tokenExpires: string;
+    };
     this.token = { value: token, expiresAt: new Date(tokenExpires).getTime() };
     this.logger.log(`Logged in to the ERP as ${this.username}`);
     return token;

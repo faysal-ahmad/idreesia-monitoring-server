@@ -12,8 +12,18 @@ import { ErpController } from './erp.controller';
 // Everything that talks to the ERP: the two-way channel/profile sync and the alert push.
 // Idle unless ERP_URL, ERP_USERNAME and ERP_PASSWORD are set.
 @Module({
-  imports: [AlertModule, ConfigurationModule, IngestionModule, MonitoringProfileModule],
+  imports: [
+    AlertModule,
+    ConfigurationModule,
+    IngestionModule,
+    MonitoringProfileModule,
+  ],
   controllers: [ErpController],
-  providers: [ErpClientService, ErpSyncStateService, ErpAlertPushService, ErpSyncService],
+  providers: [
+    ErpClientService,
+    ErpSyncStateService,
+    ErpAlertPushService,
+    ErpSyncService,
+  ],
 })
 export class ErpModule {}

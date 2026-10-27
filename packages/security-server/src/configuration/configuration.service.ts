@@ -2,7 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Observable, Subject } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
-import { CONFIG_DEFINITIONS, ConfigKey, ConfigValues, UpdateConfigurationDto } from './configuration.schema';
+import {
+  CONFIG_DEFINITIONS,
+  ConfigKey,
+  ConfigValues,
+  UpdateConfigurationDto,
+} from './configuration.schema';
 
 @Injectable()
 export class ConfigurationService {
@@ -26,7 +31,9 @@ export class ConfigurationService {
         // falls back to the default too: throwing here would fail startup and every scheduled job.
         const parsed = definition.schema.safeParse(byKey.get(key));
         if (!parsed.success) {
-          this.logger.warn(`Stored value of setting "${key}" is invalid; using its default: ${parsed.error.message}`);
+          this.logger.warn(
+            `Stored value of setting "${key}" is invalid; using its default: ${parsed.error.message}`,
+          );
           return [key, definition.default];
         }
         return [key, parsed.data];
@@ -36,12 +43,17 @@ export class ConfigurationService {
 
   async update(dto: UpdateConfigurationDto): Promise<ConfigValues> {
     await Promise.all(
-      (Object.entries(dto) as [ConfigKey, ConfigValues[ConfigKey]][]).map(([key, value]) =>
-        this.prisma.configuration.upsert({
-          where: { key },
-          update: { value: value as Prisma.InputJsonValue },
-          create: { key, displayName: CONFIG_DEFINITIONS[key].displayName, value: value as Prisma.InputJsonValue },
-        }),
+      (Object.entries(dto) as [ConfigKey, ConfigValues[ConfigKey]][]).map(
+        ([key, value]) =>
+          this.prisma.configuration.upsert({
+            where: { key },
+            update: { value: value as Prisma.InputJsonValue },
+            create: {
+              key,
+              displayName: CONFIG_DEFINITIONS[key].displayName,
+              value: value as Prisma.InputJsonValue,
+            },
+          }),
       ),
     );
     const values = await this.getAll();

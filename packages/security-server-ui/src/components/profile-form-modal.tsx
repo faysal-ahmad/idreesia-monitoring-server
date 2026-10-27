@@ -46,7 +46,11 @@ export function ProfileFormModal({
       destroyOnHidden
     >
       <Form form={form} layout="vertical">
-        <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Name is required' }]}>
+        <Form.Item
+          name="name"
+          label="Name"
+          rules={[{ required: true, message: 'Name is required' }]}
+        >
           <Input placeholder="Full name" />
         </Form.Item>
         <Form.Item

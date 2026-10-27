@@ -41,7 +41,11 @@ jobs:
           node-version: 24
           cache: 'yarn'
 
-      - run: yarn install --frozen-lockfile
+      # --ignore-scripts skips the native @u4/opencv4nodejs build: OpenCV is only ever compiled
+      # in the Docker images, and lint/typecheck/build never load the addon. That also skips
+      # Prisma's postinstall, so generate the client explicitly for typecheck.
+      - run: yarn install --frozen-lockfile --ignore-scripts
+      - run: yarn nx run @idreesia/security-server:prisma-generate
 
-      - run: yarn nx format:check
+      - run: yarn nx format:check --all
       - run: yarn nx run-many -t lint build typecheck

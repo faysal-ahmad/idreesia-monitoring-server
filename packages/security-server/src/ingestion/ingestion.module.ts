@@ -9,9 +9,18 @@ import { FaceMatchCacheService } from './face-match-cache.service';
 import { VideoIngestionService } from './video-ingestion.service';
 
 @Module({
-  imports: [RecognitionModule, ConfigurationModule, AlertModule, MediaServerModule],
+  imports: [
+    RecognitionModule,
+    ConfigurationModule,
+    AlertModule,
+    MediaServerModule,
+  ],
   controllers: [ChannelHealthController],
-  providers: [VideoIngestionService, AlertPipelineService, FaceMatchCacheService],
+  providers: [
+    VideoIngestionService,
+    AlertPipelineService,
+    FaceMatchCacheService,
+  ],
   // Both are re-synced on demand rather than polled — by the ERP sync after it applies changes,
   // and by SystemController's /system/reload, which the UI calls after any channel, profile or
   // configuration change.

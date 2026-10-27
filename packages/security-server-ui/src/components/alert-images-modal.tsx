@@ -35,7 +35,8 @@ export function AlertImagesModal({ alert, onClose }: AlertImagesModalProps) {
           <Space orientation="vertical" size="small" style={{ width: '100%' }}>
             <Text strong>Captured frame</Text>
             <Text type="secondary">
-              {alert.channel.name} · {new Date(alert.timestamp).toLocaleString()} ·{' '}
+              {alert.channel.name} ·{' '}
+              {new Date(alert.timestamp).toLocaleString()} ·{' '}
               {Math.round(alert.similarityScore * 100)}% confidence
             </Text>
             <Image
@@ -50,7 +51,9 @@ export function AlertImagesModal({ alert, onClose }: AlertImagesModalProps) {
           <Space orientation="vertical" size="small" style={{ width: '100%' }}>
             <Text strong>Profile photos — {alert.profile.name}</Text>
             {isLoading && <Spin />}
-            {profile?.images.length === 0 && <Empty description="This profile has no photos" />}
+            {profile?.images.length === 0 && (
+              <Empty description="This profile has no photos" />
+            )}
             <Space wrap>
               {profile?.images.map((image) => (
                 <Image
@@ -64,7 +67,6 @@ export function AlertImagesModal({ alert, onClose }: AlertImagesModalProps) {
               ))}
             </Space>
           </Space>
-
         </>
       )}
     </Modal>

@@ -21,7 +21,9 @@ const REDACTED_PLACEHOLDER = '••••••';
 
 // Credentials live inside the config JSONB blob, not a dedicated column — redaction has to
 // strip specific known keys out of the JSON rather than exclude a column.
-export function redactConfig(config: Record<string, unknown>): Record<string, unknown> {
+export function redactConfig(
+  config: Record<string, unknown>,
+): Record<string, unknown> {
   const redacted = { ...config };
   for (const key of REDACTED_KEYS) {
     if (redacted[key] != null) redacted[key] = REDACTED_PLACEHOLDER;
@@ -37,8 +39,13 @@ export function mergeStoredCredentials(
   incoming: Record<string, unknown>,
 ): Record<string, unknown> {
   const merged = { ...incoming };
-  if (merged.username === REDACTED_PLACEHOLDER) merged.username = stored.username;
-  if (merged.password == null || merged.password === '' || merged.password === REDACTED_PLACEHOLDER) {
+  if (merged.username === REDACTED_PLACEHOLDER)
+    merged.username = stored.username;
+  if (
+    merged.password == null ||
+    merged.password === '' ||
+    merged.password === REDACTED_PLACEHOLDER
+  ) {
     merged.password = stored.password;
   }
   return merged;

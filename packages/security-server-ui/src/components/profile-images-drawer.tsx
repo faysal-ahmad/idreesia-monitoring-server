@@ -1,6 +1,18 @@
 import { InboxOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, Drawer, Empty, Image, Popconfirm, Space, Tag, Tooltip, Typography, Upload } from 'antd';
+import {
+  App,
+  Button,
+  Drawer,
+  Empty,
+  Image,
+  Popconfirm,
+  Space,
+  Tag,
+  Tooltip,
+  Typography,
+  Upload,
+} from 'antd';
 import type { UploadProps } from 'antd';
 import { monitoringProfilesApi } from '../api/monitoring-profiles';
 import { FaceQuality, FaceQualitySignal } from '../api/types';
@@ -23,7 +35,12 @@ function qualityColor(score: number) {
 
 // Drawn over the bottom-left corner of a thumbnail; the breakdown is in the tooltip.
 function QualityBadge({ quality }: { quality: FaceQuality | null }) {
-  const style = { position: 'absolute' as const, bottom: 4, left: 4, marginInlineEnd: 0 };
+  const style = {
+    position: 'absolute' as const,
+    bottom: 4,
+    left: 4,
+    marginInlineEnd: 0,
+  };
   if (!quality) {
     return (
       <Tooltip title="Not rated (no face found)">
@@ -36,7 +53,9 @@ function QualityBadge({ quality }: { quality: FaceQuality | null }) {
 
   const tooltip = (
     <>
-      {quality.reasons.length > 0 && <div style={{ marginBottom: 4 }}>{quality.reasons.join(', ')}</div>}
+      {quality.reasons.length > 0 && (
+        <div style={{ marginBottom: 4 }}>{quality.reasons.join(', ')}</div>
+      )}
       {(Object.keys(SIGNAL_LABELS) as FaceQualitySignal[]).map((signal) => (
         <div key={signal}>
           {SIGNAL_LABELS[signal]}: {Math.round(quality.signals[signal] * 100)}%
@@ -58,7 +77,10 @@ interface ProfileImagesDrawerProps {
   onClose: () => void;
 }
 
-export function ProfileImagesDrawer({ profileId, onClose }: ProfileImagesDrawerProps) {
+export function ProfileImagesDrawer({
+  profileId,
+  onClose,
+}: ProfileImagesDrawerProps) {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
 
@@ -68,11 +90,19 @@ export function ProfileImagesDrawer({ profileId, onClose }: ProfileImagesDrawerP
     enabled: !!profileId,
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['monitoring-profiles', profileId] });
+  const invalidate = () =>
+    queryClient.invalidateQueries({
+      queryKey: ['monitoring-profiles', profileId],
+    });
 
   const uploadMutation = useMutation({
-    mutationFn: ({ file, acknowledgeWarning }: { file: File; acknowledgeWarning: boolean }) =>
-      monitoringProfilesApi.addImage(profileId!, file, acknowledgeWarning),
+    mutationFn: ({
+      file,
+      acknowledgeWarning,
+    }: {
+      file: File;
+      acknowledgeWarning: boolean;
+    }) => monitoringProfilesApi.addImage(profileId!, file, acknowledgeWarning),
     onSuccess: (result, { file }) => {
       if (result.status === 'rejected') {
         message.error(result.reason);
@@ -92,26 +122,39 @@ export function ProfileImagesDrawer({ profileId, onClose }: ProfileImagesDrawerP
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['monitoring-profiles'] });
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : 'Upload failed'),
+    onError: (error) =>
+      message.error(error instanceof Error ? error.message : 'Upload failed'),
   });
 
   const removeImageMutation = useMutation({
-    mutationFn: (imageId: string) => monitoringProfilesApi.removeImage(profileId!, imageId),
+    mutationFn: (imageId: string) =>
+      monitoringProfilesApi.removeImage(profileId!, imageId),
     onSuccess: () => {
       invalidate();
       queryClient.invalidateQueries({ queryKey: ['monitoring-profiles'] });
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : 'Failed to remove image'),
+    onError: (error) =>
+      message.error(
+        error instanceof Error ? error.message : 'Failed to remove image',
+      ),
   });
 
   const recalculateMutation = useMutation({
     mutationFn: () => monitoringProfilesApi.recalculateQuality(profileId!),
     onSuccess: ({ recalculated, notRated }) => {
-      const suffix = notRated > 0 ? ` (${notRated} had no detectable face)` : '';
-      message.success(`Quality recalculated for ${recalculated} photo(s)${suffix}`);
+      const suffix =
+        notRated > 0 ? ` (${notRated} had no detectable face)` : '';
+      message.success(
+        `Quality recalculated for ${recalculated} photo(s)${suffix}`,
+      );
       invalidate();
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : 'Failed to recalculate quality'),
+    onError: (error) =>
+      message.error(
+        error instanceof Error
+          ? error.message
+          : 'Failed to recalculate quality',
+      ),
   });
 
   const uploadProps: UploadProps = {
@@ -124,7 +167,12 @@ export function ProfileImagesDrawer({ profileId, onClose }: ProfileImagesDrawerP
   };
 
   return (
-    <Drawer title={profile ? `Photos — ${profile.name}` : 'Photos'} open={!!profileId} onClose={onClose} size={480}>
+    <Drawer
+      title={profile ? `Photos — ${profile.name}` : 'Photos'}
+      open={!!profileId}
+      onClose={onClose}
+      size={480}
+    >
       <Space orientation="vertical" style={{ width: '100%' }} size="middle">
         <Upload.Dragger {...uploadProps}>
           <p className="ant-upload-drag-icon">
@@ -132,11 +180,14 @@ export function ProfileImagesDrawer({ profileId, onClose }: ProfileImagesDrawerP
           </p>
           <p className="ant-upload-text">Click or drag a photo to add it</p>
           <p className="ant-upload-hint">
-            Use a clear, close-up photo showing only this person. No group shots.
+            Use a clear, close-up photo showing only this person. No group
+            shots.
           </p>
         </Upload.Dragger>
 
-        {uploadMutation.isPending && <Text type="secondary">Analyzing photo…</Text>}
+        {uploadMutation.isPending && (
+          <Text type="secondary">Analyzing photo…</Text>
+        )}
 
         {profile?.images.length === 0 && <Empty description="No photos yet" />}
 
@@ -154,10 +205,22 @@ export function ProfileImagesDrawer({ profileId, onClose }: ProfileImagesDrawerP
           <Space wrap>
             {profile?.images.map((image) => (
               <div key={image.id} style={{ position: 'relative' }}>
-                <Image src={image.previewImage} width={140} height={140} style={{ objectFit: 'cover' }} />
+                <Image
+                  src={image.previewImage}
+                  width={140}
+                  height={140}
+                  style={{ objectFit: 'cover' }}
+                />
                 <QualityBadge quality={image.quality} />
-                <Popconfirm title="Remove this photo?" onConfirm={() => removeImageMutation.mutate(image.id)}>
-                  <Button size="small" danger style={{ position: 'absolute', top: 4, right: 4 }}>
+                <Popconfirm
+                  title="Remove this photo?"
+                  onConfirm={() => removeImageMutation.mutate(image.id)}
+                >
+                  <Button
+                    size="small"
+                    danger
+                    style={{ position: 'absolute', top: 4, right: 4 }}
+                  >
                     Remove
                   </Button>
                 </Popconfirm>

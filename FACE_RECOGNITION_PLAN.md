@@ -7,7 +7,7 @@ architecture and decisions made, plus the concrete build plan.
 
 This is a **watch-list alerting system**, not access control. `MonitoringProfile`
 rows are people of interest — the system should raise an alert when one of them
-is *detected* in the video feed. This is the reverse of the original face-api.js
+is _detected_ in the video feed. This is the reverse of the original face-api.js
 draft's "grant access to a known employee" framing, and it changes which branch
 of a match triggers the alert (see Architecture/Phase 3 below).
 
@@ -16,31 +16,31 @@ found — social media (Facebook, etc.), not a controlled photo shoot. That has
 real consequences for enrollment: variable resolution/compression, arbitrary
 angle/lighting, sometimes sunglasses/filters/group shots, and often only a
 single usable photo per person rather than several. The plan needs to treat
-single-image enrollment as the *normal* case, not an edge case.
+single-image enrollment as the _normal_ case, not an edge case.
 
 ## Decisions made in the conversation
 
-| Decision point | Choice |
-|---|---|
-| Deployment target | Local PC (not edge hardware — Jetson/Pi ruled out) |
-| Identification scenario | **Facial recognition** (not plain person detection, not Re-ID) |
-| Alert model | **Watch-list**: alert fires when a monitored person *is* detected, not when someone is unrecognized |
-| Camera framing | Close-up (doorway/turnstile entry), not wide-angle overhead |
-| Monitoring profiles count | Under 50 people |
-| Profile image source | Public/social-media photos of the person — uncontrolled quality/angle, often a single image per profile |
-| Runtime | **Node.js** (not Python) |
-| Recognition library | **OpenCV** via Node bindings (not face-api.js/TensorFlow.js) |
-| Detection model | **YuNet** (ONNX, via generic `cv.dnn` — `@u4/opencv4nodejs` confirmed not to bind `FaceDetectorYN`) — not Haar cascade |
-| Recognition model | **SFace** (ONNX, via generic `cv.dnn` — confirmed not to bind `FaceRecognizerSF`) — not LBPH — outputs a 128-d embedding per face |
-| Video ingestion | OpenCV `VideoCapture` (native ffmpeg-backed videoio) |
-| Monitoring profile storage | **Two Postgres tables** via Prisma — `MonitoringProfile` (name, `isTest` flag) 1-to-many `MonitoringProfileImage` (image blob **+ its own SFace embedding**) — one embedding per image, not aggregated to a single per-person vector |
-| Test vs. real profiles | `isTest` flag on `MonitoringProfile` — test profiles are used only by the calibration "test match" flow and are fully excluded from the live alert pipeline's match set |
-| Video feed source config | **DB-backed** (Postgres via Prisma), managed through `security-server-ui` — not a single `CAMERA_SOURCE` env var. Schema: name + `type` (RTSP/USB) + enabled flag + a **JSONB `config` column** for type-specific fields, rather than fixed columns per type. No encryption-at-rest for credentials (redaction only); `config` validated by a **Zod schema keyed by `type`**; seeded webcam channel starts **disabled** |
-| Similarity threshold | **Cosine similarity**, ships with SFace's hardcoded reference default; **calibratable per channel** via a nullable `similarityThreshold` column (null = use the default), set through a "test match" UI flow rather than a raw number field |
-| Alert history storage | New **`Alert`** Postgres table via Prisma — `timestamp` + FK to `MonitoringProfile` + FK to the video feed source ("channel") — separate from the notification-channel question, still open |
-| Vector matching location | **In-memory** (not per-frame pgvector queries) — negligible cost at this scale. Revisit only if embedding count reaches the order of tens of thousands (see Phase 1) |
-| Embedding storage type | **`vector(128)`** (pgvector), not plain array/JSON — future-proofs for DB-side matching later, even though matching stays in-memory now. Already backed by existing infra (`pgvector/pgvector:pg18` image + `init.sql` extension setup); Prisma-side wiring (`previewFeatures`, `Unsupported("vector(128)")` + raw SQL for this column) is still new work |
-| Distribution | Docker container |
+| Decision point             | Choice                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deployment target          | Local PC (not edge hardware — Jetson/Pi ruled out)                                                                                                                                                                                                                                                                                                                                                                      |
+| Identification scenario    | **Facial recognition** (not plain person detection, not Re-ID)                                                                                                                                                                                                                                                                                                                                                          |
+| Alert model                | **Watch-list**: alert fires when a monitored person _is_ detected, not when someone is unrecognized                                                                                                                                                                                                                                                                                                                     |
+| Camera framing             | Close-up (doorway/turnstile entry), not wide-angle overhead                                                                                                                                                                                                                                                                                                                                                             |
+| Monitoring profiles count  | Under 50 people                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Profile image source       | Public/social-media photos of the person — uncontrolled quality/angle, often a single image per profile                                                                                                                                                                                                                                                                                                                 |
+| Runtime                    | **Node.js** (not Python)                                                                                                                                                                                                                                                                                                                                                                                                |
+| Recognition library        | **OpenCV** via Node bindings (not face-api.js/TensorFlow.js)                                                                                                                                                                                                                                                                                                                                                            |
+| Detection model            | **YuNet** (ONNX, via generic `cv.dnn` — `@u4/opencv4nodejs` confirmed not to bind `FaceDetectorYN`) — not Haar cascade                                                                                                                                                                                                                                                                                                  |
+| Recognition model          | **SFace** (ONNX, via generic `cv.dnn` — confirmed not to bind `FaceRecognizerSF`) — not LBPH — outputs a 128-d embedding per face                                                                                                                                                                                                                                                                                       |
+| Video ingestion            | OpenCV `VideoCapture` (native ffmpeg-backed videoio)                                                                                                                                                                                                                                                                                                                                                                    |
+| Monitoring profile storage | **Two Postgres tables** via Prisma — `MonitoringProfile` (name, `isTest` flag) 1-to-many `MonitoringProfileImage` (image blob **+ its own SFace embedding**) — one embedding per image, not aggregated to a single per-person vector                                                                                                                                                                                    |
+| Test vs. real profiles     | `isTest` flag on `MonitoringProfile` — test profiles are used only by the calibration "test match" flow and are fully excluded from the live alert pipeline's match set                                                                                                                                                                                                                                                 |
+| Video feed source config   | **DB-backed** (Postgres via Prisma), managed through `security-server-ui` — not a single `CAMERA_SOURCE` env var. Schema: name + `type` (RTSP/USB) + enabled flag + a **JSONB `config` column** for type-specific fields, rather than fixed columns per type. No encryption-at-rest for credentials (redaction only); `config` validated by a **Zod schema keyed by `type`**; seeded webcam channel starts **disabled** |
+| Similarity threshold       | **Cosine similarity**, ships with SFace's hardcoded reference default; **calibratable per channel** via a nullable `similarityThreshold` column (null = use the default), set through a "test match" UI flow rather than a raw number field                                                                                                                                                                             |
+| Alert history storage      | New **`Alert`** Postgres table via Prisma — `timestamp` + FK to `MonitoringProfile` + FK to the video feed source ("channel") — separate from the notification-channel question, still open                                                                                                                                                                                                                             |
+| Vector matching location   | **In-memory** (not per-frame pgvector queries) — negligible cost at this scale. Revisit only if embedding count reaches the order of tens of thousands (see Phase 1)                                                                                                                                                                                                                                                    |
+| Embedding storage type     | **`vector(128)`** (pgvector), not plain array/JSON — future-proofs for DB-side matching later, even though matching stays in-memory now. Already backed by existing infra (`pgvector/pgvector:pg18` image + `init.sql` extension setup); Prisma-side wiring (`previewFeatures`, `Unsupported("vector(128)")` + raw SQL for this column) is still new work                                                               |
+| Distribution               | Docker container                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## Architecture
 
@@ -114,11 +114,11 @@ the way YuNet/SFace get used here, not a fallback contingent on a check.
   image's bytes into a `cv.Mat`, run YuNet to detect + align the face, then
   SFace `.feature()` to get its 128-d embedding — no training step at all,
   unlike LBPH. Keep an in-memory list of `(embedding, MonitoringProfile.id/
-  name)` pairs, one entry per `MonitoringProfileImage`, to compare incoming
+name)` pairs, one entry per `MonitoringProfileImage`, to compare incoming
   frames against during live monitoring.
 - **Matching stays in-memory, not per-frame pgvector queries** — even at
   ~150 stored embeddings (current scale), a brute-force cosine comparison
-  against all of them is on the order of 150–300 *microseconds* total,
+  against all of them is on the order of 150–300 _microseconds_ total,
   negligible next to the YuNet+SFace inference cost that already runs every
   frame. Querying pgvector per detected face would add a real network
   round-trip to Postgres for no algorithmic benefit — pgvector's ANN
@@ -280,7 +280,7 @@ monitoring profiles tables.
     field.
   - **RTSP**: there's no discovery mechanism for finding a camera on the
     network — host, port, path, and credentials always have to be entered
-    manually. What *can* be probed, once a URL is supplied, is the stream's
+    manually. What _can_ be probed, once a URL is supplied, is the stream's
     actual resolution/FPS by briefly opening it — so those fields don't need
     to be asked for manually even though the connection details do.
 - **Management UI**: new pages in `security-server-ui` to list, add, edit, and
@@ -351,7 +351,7 @@ multiple embedded images.
   metadata for now (no notes, case reference, etc.; revisit only if a real
   need shows up). This is the entity `security-server-ui`'s add/edit/remove
   pages operate on, and the label surfaced when an alert fires (`"Alert:
-  <name> detected"`).
+<name> detected"`).
 - **`isTest` separates calibration profiles from real watch-list profiles**:
   the live alert pipeline (Phase 3) only ever compares against
   `isTest: false` profiles' embeddings — test profiles are entirely excluded
@@ -405,7 +405,7 @@ multiple embedded images.
   `docker-compose.development.yml` and `docker-compose.production.yml`
   already run `pgvector/pgvector:pg18` (not plain `postgres`), and
   `configs/postgres/init.sql` already runs `CREATE EXTENSION IF NOT EXISTS
-  vector SCHEMA security_server` against both the main and test databases —
+vector SCHEMA security_server` against both the main and test databases —
   this was apparently anticipated before this plan existed.
   **What's still actual work**: `packages/security-server/prisma/schema.prisma`
   is currently a blank scaffold with no models and no `previewFeatures` at
@@ -447,11 +447,11 @@ multiple embedded images.
   - No automated detection of sunglasses/filters/heavy occlusion — that would
     need its own attribute-classification model for something the admin
     already judges by looking at the photo they're choosing to upload.
-  This mirrors the rest of the plan's general posture on source-photo
-  quality: too strict and legitimate profiles can't be created from the only
-  photo available; too loose and low-quality embeddings hurt runtime
-  matching — so the system informs and lets the human operator decide,
-  rather than picking one failure mode for them.
+    This mirrors the rest of the plan's general posture on source-photo
+    quality: too strict and legitimate profiles can't be created from the only
+    photo available; too loose and low-quality embeddings hurt runtime
+    matching — so the system informs and lets the human operator decide,
+    rather than picking one failure mode for them.
 - Enrollment (Phase 1) is the consumer of this data — instead of decoding raw
   image bytes on every startup, it loads every `MonitoringProfileImage.embedding`
   (joined to its parent `MonitoringProfile` for the name) directly into

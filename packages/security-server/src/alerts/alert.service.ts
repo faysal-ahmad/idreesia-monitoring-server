@@ -14,7 +14,9 @@ const ALERT_LIST_SELECT = {
   channel: { select: { id: true, name: true } },
 } satisfies Prisma.AlertSelect;
 
-function toListItem(alert: Prisma.AlertGetPayload<{ select: typeof ALERT_LIST_SELECT }>) {
+function toListItem(
+  alert: Prisma.AlertGetPayload<{ select: typeof ALERT_LIST_SELECT }>,
+) {
   return {
     id: alert.id,
     imageFile: alert.imageFile,
@@ -75,11 +77,17 @@ export class AlertService {
   }
 
   // The frame is written to disk first; if the row can't be created, the file is removed again.
-  async create(data: Omit<Prisma.AlertUncheckedCreateInput, 'imageFile'>, image: Uint8Array) {
+  async create(
+    data: Omit<Prisma.AlertUncheckedCreateInput, 'imageFile'>,
+    image: Uint8Array,
+  ) {
     const imageFile = await this.images.save(image);
     let created;
     try {
-      created = await this.prisma.alert.create({ data: { ...data, imageFile }, select: ALERT_LIST_SELECT });
+      created = await this.prisma.alert.create({
+        data: { ...data, imageFile },
+        select: ALERT_LIST_SELECT,
+      });
     } catch (error) {
       await this.images.remove([imageFile]);
       throw error;

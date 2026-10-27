@@ -42,7 +42,14 @@ export class AlertPipelineService {
       }
       const match = this.matchCache.findBestMatch(embedding, threshold);
       if (match) {
-        await this.triggerAlert(channel, frame, face.box, match.profileId, match.profileName, match.score);
+        await this.triggerAlert(
+          channel,
+          frame,
+          face.box,
+          match.profileId,
+          match.profileName,
+          match.score,
+        );
       }
     }
   }
@@ -68,7 +75,14 @@ export class AlertPipelineService {
     } finally {
       annotated.release();
     }
-    await this.alerts.create({ monitoringProfileId: profileId, channelId: channel.id, similarityScore: score }, image);
+    await this.alerts.create(
+      {
+        monitoringProfileId: profileId,
+        channelId: channel.id,
+        similarityScore: score,
+      },
+      image,
+    );
     this.logger.log(
       `ALERT: "${profileName}" detected on channel "${channel.name}" (cosine similarity ${score.toFixed(3)})`,
     );
@@ -84,8 +98,16 @@ export class AlertPipelineService {
     const x2 = Math.min(frame.cols - 1, Math.round(box.x + box.width));
     const y2 = Math.min(frame.rows - 1, Math.round(box.y + box.height));
     // Scale the stroke with resolution so the box stays visible on 4K frames without being heavy on 480p.
-    const thickness = Math.max(2, Math.round(Math.max(frame.cols, frame.rows) / 400));
-    annotated.drawRectangle(new cv.Point2(x1, y1), new cv.Point2(x2, y2), new cv.Vec3(0, 0, 255), thickness);
+    const thickness = Math.max(
+      2,
+      Math.round(Math.max(frame.cols, frame.rows) / 400),
+    );
+    annotated.drawRectangle(
+      new cv.Point2(x1, y1),
+      new cv.Point2(x2, y2),
+      new cv.Vec3(0, 0, 255),
+      thickness,
+    );
     return annotated;
   }
 }

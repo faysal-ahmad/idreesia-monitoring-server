@@ -18,7 +18,10 @@ export class AlertController {
   ) {}
 
   @Get()
-  list(@Query(new ZodValidationPipe(ListAlertsQuerySchema)) query: ReturnType<typeof ListAlertsQuerySchema.parse>) {
+  list(
+    @Query(new ZodValidationPipe(ListAlertsQuerySchema))
+    query: ReturnType<typeof ListAlertsQuerySchema.parse>,
+  ) {
     return this.service.list(query);
   }
 

@@ -5,7 +5,17 @@ import { FaceRecognitionService } from './face-recognition.service';
 import { VideoCaptureService } from './video-capture.service';
 
 @Module({
-  providers: [FaceDetectionService, FaceRecognitionService, FaceQualityService, VideoCaptureService],
-  exports: [FaceDetectionService, FaceRecognitionService, FaceQualityService, VideoCaptureService],
+  providers: [
+    FaceDetectionService,
+    FaceRecognitionService,
+    FaceQualityService,
+    VideoCaptureService,
+  ],
+  exports: [
+    FaceDetectionService,
+    FaceRecognitionService,
+    FaceQualityService,
+    VideoCaptureService,
+  ],
 })
 export class RecognitionModule {}

@@ -19,7 +19,8 @@ const DST_MEAN: [number, number] = [56.0262, 71.9008];
 // suffix marks the V-transpose correction in getSimilarityTransformMatrix below - embeddings
 // produced before it came from unaligned faces. EmbeddingBackfillService recomputes anything
 // stored under a different version.
-export const EMBEDDING_MODEL_VERSION = 'yunet-2023mar+sface-2021dec+umeyama-fix';
+export const EMBEDDING_MODEL_VERSION =
+  'yunet-2023mar+sface-2021dec+umeyama-fix';
 
 interface Svd2x2Result {
   s: [number, number];
@@ -56,7 +57,10 @@ function svd2x2(a: number, b: number, c: number, d: number): Svd2x2Result {
   const s1 = Math.sqrt(lambda1);
   const s2 = Math.sqrt(lambda2);
 
-  const applyA = ([x, y]: [number, number]): [number, number] => [a * x + b * y, c * x + d * y];
+  const applyA = ([x, y]: [number, number]): [number, number] => [
+    a * x + b * y,
+    c * x + d * y,
+  ];
   const uFor = (v: [number, number], s: number): [number, number] | null => {
     if (s < 1e-9) return null;
     const av = applyA(v);
@@ -95,15 +99,26 @@ function det2(m: [[number, number], [number, number]]): number {
 // estimation (least-squares scale+rotation+translation) mapping detected 5-point landmarks onto
 // SFace's canonical alignment target. Verified numerically (sub-micron reconstruction error)
 // against synthetic scale/rotation/translation cases before use.
-function getSimilarityTransformMatrix(src: [number, number][]): [[number, number, number], [number, number, number]] {
+function getSimilarityTransformMatrix(
+  src: [number, number][],
+): [[number, number, number], [number, number, number]] {
   const srcMean: [number, number] = [
     src.reduce((sum, p) => sum + p[0], 0) / 5,
     src.reduce((sum, p) => sum + p[1], 0) / 5,
   ];
-  const srcDemean = src.map((p): [number, number] => [p[0] - srcMean[0], p[1] - srcMean[1]]);
-  const dstDemean = DST_POINTS.map((p): [number, number] => [p[0] - DST_MEAN[0], p[1] - DST_MEAN[1]]);
+  const srcDemean = src.map((p): [number, number] => [
+    p[0] - srcMean[0],
+    p[1] - srcMean[1],
+  ]);
+  const dstDemean = DST_POINTS.map((p): [number, number] => [
+    p[0] - DST_MEAN[0],
+    p[1] - DST_MEAN[1],
+  ]);
 
-  let a00 = 0, a01 = 0, a10 = 0, a11 = 0;
+  let a00 = 0,
+    a01 = 0,
+    a10 = 0,
+    a11 = 0;
   for (let i = 0; i < 5; i++) {
     a00 += dstDemean[i][0] * srcDemean[i][0];
     a01 += dstDemean[i][0] * srcDemean[i][1];
@@ -128,10 +143,19 @@ function getSimilarityTransformMatrix(src: [number, number][]): [[number, number
   if (s[0] > tol) rank += 1;
   if (s[1] > tol) rank += 1;
 
-  const matMul2 = (m: [[number, number], [number, number]], n: [[number, number], [number, number]]) =>
+  const matMul2 = (
+    m: [[number, number], [number, number]],
+    n: [[number, number], [number, number]],
+  ) =>
     [
-      [m[0][0] * n[0][0] + m[0][1] * n[1][0], m[0][0] * n[0][1] + m[0][1] * n[1][1]],
-      [m[1][0] * n[0][0] + m[1][1] * n[1][0], m[1][0] * n[0][1] + m[1][1] * n[1][1]],
+      [
+        m[0][0] * n[0][0] + m[0][1] * n[1][0],
+        m[0][0] * n[0][1] + m[0][1] * n[1][1],
+      ],
+      [
+        m[1][0] * n[0][0] + m[1][1] * n[1][0],
+        m[1][0] * n[0][1] + m[1][1] * n[1][1],
+      ],
     ] as [[number, number], [number, number]];
 
   // svd2x2 returns V with the right singular vectors as its COLUMNS, i.e. A = U * S * V^T.
@@ -163,7 +187,8 @@ function getSimilarityTransformMatrix(src: [number, number][]): [[number, number
     t = matMul2(ud, Vt);
   }
 
-  let var1 = 0, var2 = 0;
+  let var1 = 0,
+    var2 = 0;
   for (let i = 0; i < 5; i++) {
     var1 += srcDemean[i][0] * srcDemean[i][0];
     var2 += srcDemean[i][1] * srcDemean[i][1];
@@ -195,14 +220,25 @@ export class FaceRecognitionService implements OnModuleInit {
     const m = getSimilarityTransformMatrix(landmarks);
     const transformMat = new cv.Mat(m, cv.CV_64FC1);
     try {
-      return image.warpAffine(transformMat, new cv.Size(112, 112), cv.INTER_LINEAR);
+      return image.warpAffine(
+        transformMat,
+        new cv.Size(112, 112),
+        cv.INTER_LINEAR,
+      );
     } finally {
       transformMat.release();
     }
   }
 
   embed(alignedImage: cv.Mat): number[] {
-    const blob = cv.blobFromImage(alignedImage, 1, new cv.Size(112, 112), new cv.Vec3(0, 0, 0), true, false);
+    const blob = cv.blobFromImage(
+      alignedImage,
+      1,
+      new cv.Size(112, 112),
+      new cv.Vec3(0, 0, 0),
+      true,
+      false,
+    );
     this.net.setInput(blob);
     blob.release();
     const output = this.net.forward();
@@ -214,7 +250,9 @@ export class FaceRecognitionService implements OnModuleInit {
   }
 
   cosineSimilarity(a: number[], b: number[]): number {
-    let dot = 0, normA = 0, normB = 0;
+    let dot = 0,
+      normA = 0,
+      normB = 0;
     for (let i = 0; i < a.length; i++) {
       dot += a[i] * b[i];
       normA += a[i] * a[i];

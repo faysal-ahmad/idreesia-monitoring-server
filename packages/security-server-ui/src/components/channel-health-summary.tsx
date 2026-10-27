@@ -15,11 +15,15 @@ export function ChannelHealthSummary() {
   });
 
   if (!channels) return null;
-  if (channels.length === 0) return <Badge status="default" text="No channels being monitored" />;
+  if (channels.length === 0)
+    return <Badge status="default" text="No channels being monitored" />;
 
   const total = channels.length;
-  const online = channels.filter((channel) => channel.status === 'online').length;
-  const status = online === total ? 'success' : online === 0 ? 'error' : 'warning';
+  const online = channels.filter(
+    (channel) => channel.status === 'online',
+  ).length;
+  const status =
+    online === total ? 'success' : online === 0 ? 'error' : 'warning';
   return (
     <Badge
       status={status}

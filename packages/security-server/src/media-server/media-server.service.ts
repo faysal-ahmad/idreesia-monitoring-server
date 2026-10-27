@@ -14,7 +14,10 @@ const ON_DEMAND_SYNC_MIN_GAP_MS = 10_000;
 // and with them channel reconciles and the ERP sync, which wait on one.
 const REQUEST_TIMEOUT_MS = 10_000;
 
-type Go2rtcStreams = Record<string, { producers: { url: string }[] | null } | null>;
+type Go2rtcStreams = Record<
+  string,
+  { producers: { url: string }[] | null } | null
+>;
 
 // Keeps the go2rtc media server's streams in step with the enabled channels: one stream per
 // channel, named by channel id, sourced from the camera's RTSP URL. go2rtc is then each camera's
@@ -26,7 +29,8 @@ type Go2rtcStreams = Record<string, { producers: { url: string }[] | null } | nu
 export class MediaServerService {
   private readonly logger = new Logger(MediaServerService.name);
   private readonly apiUrl = process.env.MEDIA_SERVER_API_URL || DEFAULT_API_URL;
-  private readonly rtspUrl = process.env.MEDIA_SERVER_RTSP_URL || DEFAULT_RTSP_URL;
+  private readonly rtspUrl =
+    process.env.MEDIA_SERVER_RTSP_URL || DEFAULT_RTSP_URL;
   // Serializes syncs so the periodic, on-demand, and reconcile-driven ones never interleave.
   private queue: Promise<unknown> = Promise.resolve();
   private lastOnDemandSyncAt = 0;
@@ -49,7 +53,11 @@ export class MediaServerService {
 
   @Interval(RESYNC_INTERVAL_MS)
   async syncEnabledChannels(): Promise<boolean> {
-    return this.sync(await this.prisma.videoFeedSource.findMany({ where: { enabled: true, deletedAt: null } }));
+    return this.sync(
+      await this.prisma.videoFeedSource.findMany({
+        where: { enabled: true, deletedAt: null },
+      }),
+    );
   }
 
   // For callers that just hit a missing/unreachable re-stream (e.g. go2rtc restarted).
@@ -58,7 +66,9 @@ export class MediaServerService {
     if (now - this.lastOnDemandSyncAt < ON_DEMAND_SYNC_MIN_GAP_MS) return;
     this.lastOnDemandSyncAt = now;
     // Called directly, so not covered by @Interval's error handling: the channel read can fail.
-    this.syncEnabledChannels().catch((error) => this.logger.warn(`On-demand stream sync failed: ${error}`));
+    this.syncEnabledChannels().catch((error) =>
+      this.logger.warn(`On-demand stream sync failed: ${error}`),
+    );
   }
 
   private async syncNow(enabledChannels: VideoFeedSource[]): Promise<boolean> {
@@ -72,27 +82,46 @@ export class MediaServerService {
       );
 
       for (const [name, src] of desired) {
-        const sources = current[name]?.producers?.map((producer) => producer.url);
+        const sources = current[name]?.producers?.map(
+          (producer) => producer.url,
+        );
         if (!sources) {
-          await this.request('PUT', `/api/streams?${new URLSearchParams({ name, src })}`);
+          await this.request(
+            'PUT',
+            `/api/streams?${new URLSearchParams({ name, src })}`,
+          );
         } else if (sources.length !== 1 || sources[0] !== src) {
-          await this.request('PATCH', `/api/streams?${new URLSearchParams({ name, src })}`);
+          await this.request(
+            'PATCH',
+            `/api/streams?${new URLSearchParams({ name, src })}`,
+          );
         }
       }
       for (const name of Object.keys(current)) {
-        if (!desired.has(name)) await this.request('DELETE', `/api/streams?${new URLSearchParams({ src: name })}`);
+        if (!desired.has(name))
+          await this.request(
+            'DELETE',
+            `/api/streams?${new URLSearchParams({ src: name })}`,
+          );
       }
       return true;
     } catch (error) {
-      this.logger.warn(`Could not sync streams with the media server (${this.apiUrl}): ${error}`);
+      this.logger.warn(
+        `Could not sync streams with the media server (${this.apiUrl}): ${error}`,
+      );
       return false;
     }
   }
 
   private async request<T = unknown>(method: string, path: string): Promise<T> {
-    const response = await fetch(`${this.apiUrl}${path}`, { method, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    const response = await fetch(`${this.apiUrl}${path}`, {
+      method,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
     if (!response.ok) {
-      throw new Error(`${method} ${path.split('?')[0]} → ${response.status} ${await response.text()}`);
+      throw new Error(
+        `${method} ${path.split('?')[0]} → ${response.status} ${await response.text()}`,
+      );
     }
     return (method === 'GET' ? response.json() : undefined) as Promise<T>;
   }

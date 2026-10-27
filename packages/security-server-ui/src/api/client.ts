@@ -29,7 +29,10 @@ async function triggerReload() {
   try {
     await fetch(`${API_BASE}/system/reload`, { method: 'POST' });
   } catch (error) {
-    console.error('Failed to notify the server to reload channel/profile state:', error);
+    console.error(
+      'Failed to notify the server to reload channel/profile state:',
+      error,
+    );
   }
 }
 
@@ -48,12 +51,18 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     return undefined as T;
   }
 
-  const isJson = response.headers.get('content-type')?.includes('application/json');
+  const isJson = response.headers
+    .get('content-type')
+    ?.includes('application/json');
   const body = isJson ? await response.json() : undefined;
 
   if (!response.ok) {
-    const message = (body && (body.message || body.error)) || response.statusText;
-    throw new ApiError(typeof message === 'string' ? message : JSON.stringify(message), response.status);
+    const message =
+      (body && (body.message || body.error)) || response.statusText;
+    throw new ApiError(
+      typeof message === 'string' ? message : JSON.stringify(message),
+      response.status,
+    );
   }
 
   if (isReloadRelevant(method, path)) await triggerReload();
@@ -64,9 +73,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'POST', body: body !== undefined ? JSON.stringify(body) : undefined }),
+    request<T>(path, {
+      method: 'POST',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
   patch: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
+    request<T>(path, {
+      method: 'PATCH',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
-  postForm: <T>(path: string, formData: FormData) => request<T>(path, { method: 'POST', body: formData }),
+  postForm: <T>(path: string, formData: FormData) =>
+    request<T>(path, { method: 'POST', body: formData }),
 };

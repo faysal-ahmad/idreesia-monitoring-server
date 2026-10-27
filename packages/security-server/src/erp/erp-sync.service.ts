@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { MonitoringProfile, Prisma, VideoFeedSource } from '@prisma/client';
 import { Subscription } from 'rxjs';
@@ -67,7 +73,9 @@ export interface SyncSummary {
 }
 
 // Stored the way RtspConfigSchema reads it: defaults filled in, absent credentials left out.
-function toRtspConfig({ connection }: Extract<ChangedChannel, { deleted: false }>): Prisma.InputJsonObject {
+function toRtspConfig({
+  connection,
+}: Extract<ChangedChannel, { deleted: false }>): Prisma.InputJsonObject {
   return {
     host: connection.host,
     port: connection.port ?? 554,
@@ -80,7 +88,10 @@ function toRtspConfig({ connection }: Extract<ChangedChannel, { deleted: false }
 const CONFIG_KEYS = ['host', 'port', 'path', 'username', 'password'] as const;
 
 // Field by field: jsonb doesn't keep key order, so the stored config can't be compared as a string.
-function channelDiffers(local: VideoFeedSource, remote: Extract<ChangedChannel, { deleted: false }>): boolean {
+function channelDiffers(
+  local: VideoFeedSource,
+  remote: Extract<ChangedChannel, { deleted: false }>,
+): boolean {
   const localConfig = local.config as Record<string, unknown>;
   const remoteConfig = toRtspConfig(remote);
   return (
@@ -125,11 +136,15 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     if (!this.client.configured) {
-      this.logger.warn('ERP_URL, ERP_USERNAME or ERP_PASSWORD is not set: syncing with the ERP is off');
+      this.logger.warn(
+        'ERP_URL, ERP_USERNAME or ERP_PASSWORD is not set: syncing with the ERP is off',
+      );
       return;
     }
     this.subscriptions.push(
-      this.configuration.changes$.subscribe(({ erpSyncIntervalMinutes }) => this.schedule(erpSyncIntervalMinutes)),
+      this.configuration.changes$.subscribe(({ erpSyncIntervalMinutes }) =>
+        this.schedule(erpSyncIntervalMinutes),
+      ),
     );
     this.schedule((await this.configuration.getAll()).erpSyncIntervalMinutes);
     void this.syncInBackground();
@@ -149,12 +164,19 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.sync();
     } catch (error) {
-      this.logger.warn(`Sync with the ERP failed: ${error instanceof Error ? error.message : error}`);
+      this.logger.warn(
+        `Sync with the ERP failed: ${error instanceof Error ? error.message : error}`,
+      );
     }
   }
 
   private schedule(minutes: number) {
-    replaceInterval(this.scheduler, SYNC_INTERVAL_NAME, minutes, () => void this.syncInBackground());
+    replaceInterval(
+      this.scheduler,
+      SYNC_INTERVAL_NAME,
+      minutes,
+      () => void this.syncInBackground(),
+    );
   }
 
   private async run(): Promise<SyncSummary> {
@@ -173,13 +195,22 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     };
 
     try {
-      const query = state.pullCursor ? `?since=${encodeURIComponent(state.pullCursor)}` : '';
-      const changes = (await (await this.client.request('GET', `/changes${query}`)).json()) as Changes;
+      const query = state.pullCursor
+        ? `?since=${encodeURIComponent(state.pullCursor)}`
+        : '';
+      const changes = (await (
+        await this.client.request('GET', `/changes${query}`)
+      ).json()) as Changes;
 
       // Records the ERP doesn't know by this server's id yet; pushed below even if unchanged.
-      const toLink = { channels: new Set<string>(), profiles: new Set<string>() };
-      for (const channel of changes.channels) await this.pullChannel(channel, since, summary, toLink.channels);
-      for (const profile of changes.profiles) await this.pullProfile(profile, since, summary, toLink.profiles);
+      const toLink = {
+        channels: new Set<string>(),
+        profiles: new Set<string>(),
+      };
+      for (const channel of changes.channels)
+        await this.pullChannel(channel, since, summary, toLink.channels);
+      for (const profile of changes.profiles)
+        await this.pullProfile(profile, since, summary, toLink.profiles);
 
       await this.pushChannels(since, toLink.channels, summary);
       await this.pushProfiles(since, toLink.profiles, summary);
@@ -209,8 +240,13 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
   // ---- Pull ------------------------------------------------------------------------------------
 
   // Changed here since the last sync — or deleted here and not yet pushed, which always counts.
-  private changedLocally(record: { updatedAt: Date; deletedAt: Date | null }, since: Date | null) {
-    return record.deletedAt !== null || since === null || record.updatedAt > since;
+  private changedLocally(
+    record: { updatedAt: Date; deletedAt: Date | null },
+    since: Date | null,
+  ) {
+    return (
+      record.deletedAt !== null || since === null || record.updatedAt > since
+    );
   }
 
   // updatedAt for rows the pull writes: at or before the last sync's start, so they don't count
@@ -225,11 +261,22 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     find: (where: { externalId: string } | { id: string }) => Promise<T | null>,
     remote: { id: string; externalId: string | null },
   ): Promise<T | null> {
-    return (await find({ externalId: remote.id })) ?? (remote.externalId ? find({ id: remote.externalId }) : null);
+    return (
+      (await find({ externalId: remote.id })) ??
+      (remote.externalId ? find({ id: remote.externalId }) : null)
+    );
   }
 
-  private async pullChannel(remote: ChangedChannel, since: Date | null, summary: SyncSummary, toLink: Set<string>) {
-    const local = await this.findLocal((where) => this.prisma.videoFeedSource.findFirst({ where }), remote);
+  private async pullChannel(
+    remote: ChangedChannel,
+    since: Date | null,
+    summary: SyncSummary,
+    toLink: Set<string>,
+  ) {
+    const local = await this.findLocal(
+      (where) => this.prisma.videoFeedSource.findFirst({ where }),
+      remote,
+    );
     if (local && this.changedLocally(local, since)) {
       summary.conflicts += 1;
       return;
@@ -239,7 +286,10 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     if (remote.deleted) {
       // Handled with the push: the ERP is told (a no-op there), then it's removed with its alerts.
       if (local) {
-        await this.prisma.videoFeedSource.update({ where: { id: local.id }, data: { deletedAt: new Date(), updatedAt } });
+        await this.prisma.videoFeedSource.update({
+          where: { id: local.id },
+          data: { deletedAt: new Date(), updatedAt },
+        });
         summary.pulled.channels += 1;
       }
       return;
@@ -262,7 +312,10 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     } else {
       localId = local.id;
       if (channelDiffers(local, remote) || local.externalId !== remote.id) {
-        await this.prisma.videoFeedSource.update({ where: { id: local.id }, data });
+        await this.prisma.videoFeedSource.update({
+          where: { id: local.id },
+          data,
+        });
         summary.pulled.channels += 1;
         this.logger.log(`Channel "${remote.name}" updated from the ERP`);
       }
@@ -270,8 +323,16 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     if (remote.externalId !== localId) toLink.add(localId);
   }
 
-  private async pullProfile(remote: ChangedProfile, since: Date | null, summary: SyncSummary, toLink: Set<string>) {
-    const local = await this.findLocal((where) => this.prisma.monitoringProfile.findFirst({ where }), remote);
+  private async pullProfile(
+    remote: ChangedProfile,
+    since: Date | null,
+    summary: SyncSummary,
+    toLink: Set<string>,
+  ) {
+    const local = await this.findLocal(
+      (where) => this.prisma.monitoringProfile.findFirst({ where }),
+      remote,
+    );
     if (local && this.changedLocally(local, since)) {
       summary.conflicts += 1;
       return;
@@ -280,20 +341,35 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
 
     if (remote.deleted) {
       if (local) {
-        await this.prisma.monitoringProfile.update({ where: { id: local.id }, data: { deletedAt: new Date(), updatedAt } });
+        await this.prisma.monitoringProfile.update({
+          where: { id: local.id },
+          data: { deletedAt: new Date(), updatedAt },
+        });
         summary.pulled.profiles += 1;
       }
       return;
     }
 
-    const data = { externalId: remote.id, name: remote.name, isTest: remote.isTest, updatedAt };
+    const data = {
+      externalId: remote.id,
+      name: remote.name,
+      isTest: remote.isTest,
+      updatedAt,
+    };
     let profile: MonitoringProfile;
     if (!local) {
       profile = await this.prisma.monitoringProfile.create({ data });
       summary.pulled.profiles += 1;
       this.logger.log(`Profile "${remote.name}" added from the ERP`);
-    } else if (local.name !== remote.name || local.isTest !== remote.isTest || local.externalId !== remote.id) {
-      profile = await this.prisma.monitoringProfile.update({ where: { id: local.id }, data });
+    } else if (
+      local.name !== remote.name ||
+      local.isTest !== remote.isTest ||
+      local.externalId !== remote.id
+    ) {
+      profile = await this.prisma.monitoringProfile.update({
+        where: { id: local.id },
+        data,
+      });
       summary.pulled.profiles += 1;
     } else {
       profile = local;
@@ -307,11 +383,17 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     const kept = new Set<string>();
     let linksMissing = remote.externalId !== profile.id;
     for (const image of remote.images) {
-      const match = localImages.find(({ id, externalId }) => externalId === image.id || id === image.externalId);
+      const match = localImages.find(
+        ({ id, externalId }) =>
+          externalId === image.id || id === image.externalId,
+      );
       if (match) {
         kept.add(match.id);
         if (match.externalId !== image.id) {
-          await this.prisma.monitoringProfileImage.update({ where: { id: match.id }, data: { externalId: image.id } });
+          await this.prisma.monitoringProfileImage.update({
+            where: { id: match.id },
+            data: { externalId: image.id },
+          });
         }
         if (image.externalId !== match.id) linksMissing = true;
         continue;
@@ -323,16 +405,23 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
         linksMissing = true;
       }
     }
-    const removed = localImages.filter(({ id }) => !kept.has(id)).map(({ id }) => id);
+    const removed = localImages
+      .filter(({ id }) => !kept.has(id))
+      .map(({ id }) => id);
     if (removed.length > 0) {
-      await this.prisma.monitoringProfileImage.deleteMany({ where: { id: { in: removed } } });
+      await this.prisma.monitoringProfileImage.deleteMany({
+        where: { id: { in: removed } },
+      });
       summary.pulled.photos += removed.length;
     }
     if (linksMissing) toLink.add(profile.id);
   }
 
   // Stored as received: the ERP checked the photo when it was uploaded there. Returns the local id.
-  private async downloadImage(profile: MonitoringProfile, erpImageId: string): Promise<string | null> {
+  private async downloadImage(
+    profile: MonitoringProfile,
+    erpImageId: string,
+  ): Promise<string | null> {
     try {
       const response = await this.client.request(
         'GET',
@@ -341,12 +430,20 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       const jpeg = Buffer.from(await response.arrayBuffer());
       const embedded = this.profiles.computeSyncedImageEmbedding(jpeg);
       if (!embedded) {
-        this.logger.warn(`No face found in photo ${erpImageId} of "${profile.name}"; it won't be used for matching`);
+        this.logger.warn(
+          `No face found in photo ${erpImageId} of "${profile.name}"; it won't be used for matching`,
+        );
       }
-      return await this.profiles.insertImage(profile.id, embedded ?? { embedding: null, jpeg, quality: null }, erpImageId);
+      return await this.profiles.insertImage(
+        profile.id,
+        embedded ?? { embedding: null, jpeg, quality: null },
+        erpImageId,
+      );
     } catch (error) {
       // Not stored, so the ERP still lists it next time; retried then.
-      this.logger.warn(`Could not download photo ${erpImageId} of "${profile.name}": ${error}`);
+      this.logger.warn(
+        `Could not download photo ${erpImageId} of "${profile.name}": ${error}`,
+      );
       return null;
     }
   }
@@ -365,8 +462,14 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private async pushChannels(since: Date | null, toLink: Set<string>, summary: SyncSummary) {
-    const channels = await this.prisma.videoFeedSource.findMany({ where: this.pushWhere(since, toLink) });
+  private async pushChannels(
+    since: Date | null,
+    toLink: Set<string>,
+    summary: SyncSummary,
+  ) {
+    const channels = await this.prisma.videoFeedSource.findMany({
+      where: this.pushWhere(since, toLink),
+    });
     for (const channel of channels) {
       const config = parseRtspConfig(channel.config);
       const body = channel.deletedAt
@@ -386,15 +489,26 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
               password: config.password || null,
             },
           };
-      const response = await this.client.request('PUT', `/channels/by-external-id/${encodeURIComponent(channel.id)}`, {
-        body,
-      });
+      const response = await this.client.request(
+        'PUT',
+        `/channels/by-external-id/${encodeURIComponent(channel.id)}`,
+        {
+          body,
+        },
+      );
       const { _id } = (await response.json()) as { _id: string | null };
       summary.pushed.channels += 1;
 
       if (channel.deletedAt) {
-        if (await this.removeWithAlerts({ channelId: channel.id }, `channel "${channel.name}"`)) {
-          await this.prisma.videoFeedSource.delete({ where: { id: channel.id } });
+        if (
+          await this.removeWithAlerts(
+            { channelId: channel.id },
+            `channel "${channel.name}"`,
+          )
+        ) {
+          await this.prisma.videoFeedSource.delete({
+            where: { id: channel.id },
+          });
         } else {
           summary.deferred += 1;
         }
@@ -408,7 +522,11 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async pushProfiles(since: Date | null, toLink: Set<string>, summary: SyncSummary) {
+  private async pushProfiles(
+    since: Date | null,
+    toLink: Set<string>,
+    summary: SyncSummary,
+  ) {
     const profiles = await this.prisma.monitoringProfile.findMany({
       where: {
         OR: [
@@ -420,13 +538,24 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     });
     for (const profile of profiles) {
       if (profile.deletedAt) {
-        await this.client.request('PUT', `/profiles/by-external-id/${encodeURIComponent(profile.id)}`, {
-          body: { erpId: profile.externalId, deleted: true },
-        });
+        await this.client.request(
+          'PUT',
+          `/profiles/by-external-id/${encodeURIComponent(profile.id)}`,
+          {
+            body: { erpId: profile.externalId, deleted: true },
+          },
+        );
         summary.pushed.profiles += 1;
-        if (await this.removeWithAlerts({ monitoringProfileId: profile.id }, `profile "${profile.name}"`)) {
+        if (
+          await this.removeWithAlerts(
+            { monitoringProfileId: profile.id },
+            `profile "${profile.name}"`,
+          )
+        ) {
           // Cascades to its photos.
-          await this.prisma.monitoringProfile.delete({ where: { id: profile.id } });
+          await this.prisma.monitoringProfile.delete({
+            where: { id: profile.id },
+          });
         } else {
           summary.deferred += 1;
         }
@@ -434,25 +563,36 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       }
 
       // Photos the ERP has are sent by id; the rest with their JPEG.
-      const images = await this.prisma.$queryRaw<{ id: string; externalId: string | null; image: Uint8Array | null }[]>`
+      const images = await this.prisma.$queryRaw<
+        { id: string; externalId: string | null; image: Uint8Array | null }[]
+      >`
         SELECT id, "externalId", CASE WHEN "externalId" IS NULL THEN image END AS image
         FROM security_server."MonitoringProfileImage"
         WHERE "profileId" = ${profile.id}
         ORDER BY "createdAt"
       `;
-      const response = await this.client.request('PUT', `/profiles/by-external-id/${encodeURIComponent(profile.id)}`, {
-        body: {
-          erpId: profile.externalId,
-          deleted: false,
-          name: profile.name,
-          isTest: profile.isTest,
-          images: images.map(({ id, externalId, image }) => ({
-            localId: id,
-            erpId: externalId,
-            ...(image ? { mimeType: 'image/jpeg', data: Buffer.from(image).toString('base64') } : {}),
-          })),
+      const response = await this.client.request(
+        'PUT',
+        `/profiles/by-external-id/${encodeURIComponent(profile.id)}`,
+        {
+          body: {
+            erpId: profile.externalId,
+            deleted: false,
+            name: profile.name,
+            isTest: profile.isTest,
+            images: images.map(({ id, externalId, image }) => ({
+              localId: id,
+              erpId: externalId,
+              ...(image
+                ? {
+                    mimeType: 'image/jpeg',
+                    data: Buffer.from(image).toString('base64'),
+                  }
+                : {}),
+            })),
+          },
         },
-      });
+      );
       const result = (await response.json()) as {
         _id: string;
         images: { localId: string; _id: string }[];
@@ -468,7 +608,10 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       }
       for (const { localId, _id } of result.images) {
         if (images.find(({ id }) => id === localId)?.externalId !== _id) {
-          await this.prisma.monitoringProfileImage.update({ where: { id: localId }, data: { externalId: _id } });
+          await this.prisma.monitoringProfileImage.update({
+            where: { id: localId },
+            data: { externalId: _id },
+          });
         }
       }
       // Sent again, with their JPEG, on the next sync.
@@ -484,15 +627,29 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
   // Deletes the alerts of a removed channel or profile, with their image files — after first
   // sending any the ERP hasn't received. false (nothing deleted) while some are still pending; the
   // record stays deleted-but-kept and this is retried on the next sync.
-  private async removeWithAlerts(where: Prisma.AlertWhereInput, label: string): Promise<boolean> {
-    if ((await this.prisma.alert.count({ where: { ...where, erpSyncStatus: 'PENDING' } })) > 0) {
+  private async removeWithAlerts(
+    where: Prisma.AlertWhereInput,
+    label: string,
+  ): Promise<boolean> {
+    if (
+      (await this.prisma.alert.count({
+        where: { ...where, erpSyncStatus: 'PENDING' },
+      })) > 0
+    ) {
       await this.alertPush.pushPending();
-      if ((await this.prisma.alert.count({ where: { ...where, erpSyncStatus: 'PENDING' } })) > 0) {
+      if (
+        (await this.prisma.alert.count({
+          where: { ...where, erpSyncStatus: 'PENDING' },
+        })) > 0
+      ) {
         this.logger.warn(`Keeping ${label} until its alerts reach the ERP`);
         return false;
       }
     }
-    const alerts = await this.prisma.alert.findMany({ where, select: { imageFile: true } });
+    const alerts = await this.prisma.alert.findMany({
+      where,
+      select: { imageFile: true },
+    });
     if (alerts.length > 0) {
       await this.prisma.alert.deleteMany({ where });
       await this.images.remove(alerts.map(({ imageFile }) => imageFile));
@@ -512,6 +669,7 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       pushed.profiles && `${pushed.profiles} profile(s) to the ERP`,
       deferred && `${deferred} delete(s) waiting for alerts`,
     ].filter(Boolean);
-    if (parts.length > 0) this.logger.log(`Synced with the ERP: ${parts.join(', ')}`);
+    if (parts.length > 0)
+      this.logger.log(`Synced with the ERP: ${parts.join(', ')}`);
   }
 }

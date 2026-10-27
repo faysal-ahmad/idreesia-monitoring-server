@@ -11,11 +11,15 @@ export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export class AdminSessionService {
   private readonly logger = new Logger(AdminSessionService.name);
   private readonly password = process.env.ADMIN_PASSWORD || '';
-  private readonly signingKey = createHash('sha256').update(`admin-session:${this.password}`).digest();
+  private readonly signingKey = createHash('sha256')
+    .update(`admin-session:${this.password}`)
+    .digest();
 
   constructor() {
     if (!this.password) {
-      this.logger.warn('ADMIN_PASSWORD is not set — admin pages and APIs are inaccessible until it is.');
+      this.logger.warn(
+        'ADMIN_PASSWORD is not set — admin pages and APIs are inaccessible until it is.',
+      );
     }
   }
 
@@ -25,7 +29,9 @@ export class AdminSessionService {
 
   checkPassword(candidate: string): boolean {
     // Comparing digests keeps the comparison constant-time regardless of length.
-    return this.isConfigured && safeEqual(sha256(candidate), sha256(this.password));
+    return (
+      this.isConfigured && safeEqual(sha256(candidate), sha256(this.password))
+    );
   }
 
   createToken(): string {
@@ -37,12 +43,15 @@ export class AdminSessionService {
     if (!this.isConfigured || !token) return false;
     const [expiresAt, signature] = token.split('.');
     if (!expiresAt || !signature) return false;
-    if (!safeEqual(Buffer.from(signature), Buffer.from(this.sign(expiresAt)))) return false;
+    if (!safeEqual(Buffer.from(signature), Buffer.from(this.sign(expiresAt))))
+      return false;
     return Number(expiresAt) > Date.now();
   }
 
   private sign(value: string): string {
-    return createHmac('sha256', this.signingKey).update(value).digest('base64url');
+    return createHmac('sha256', this.signingKey)
+      .update(value)
+      .digest('base64url');
   }
 }
 
@@ -55,7 +64,10 @@ function safeEqual(a: Buffer, b: Buffer): boolean {
 }
 
 // No cookie-parser dependency for a single cookie.
-export function readCookie(header: string | undefined, name: string): string | undefined {
+export function readCookie(
+  header: string | undefined,
+  name: string,
+): string | undefined {
   for (const part of header?.split(';') ?? []) {
     const [key, ...rest] = part.trim().split('=');
     if (key === name) return decodeURIComponent(rest.join('='));

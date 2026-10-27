@@ -11,7 +11,11 @@ async function seedConfiguration() {
       prisma.configuration.upsert({
         where: { key },
         update: {},
-        create: { key, displayName: definition.displayName, value: definition.default },
+        create: {
+          key,
+          displayName: definition.displayName,
+          value: definition.default,
+        },
       }),
     ),
   );

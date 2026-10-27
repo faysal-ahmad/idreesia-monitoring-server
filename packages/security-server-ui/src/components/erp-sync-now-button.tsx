@@ -5,7 +5,12 @@ import { erpApi } from '../api/erp';
 import { ErpSyncSummary } from '../api/types';
 import { ERP_STATUS_QUERY_KEY, useErpStatus } from './erp-status';
 
-function describe({ pulled, conflicts, pushed, deferred }: ErpSyncSummary): string {
+function describe({
+  pulled,
+  conflicts,
+  pushed,
+  deferred,
+}: ErpSyncSummary): string {
   const parts = [
     pulled.channels && `${pulled.channels} channel(s) from the ERP`,
     pulled.profiles && `${pulled.profiles} profile(s) from the ERP`,
@@ -13,9 +18,12 @@ function describe({ pulled, conflicts, pushed, deferred }: ErpSyncSummary): stri
     pushed.channels && `${pushed.channels} channel(s) to the ERP`,
     pushed.profiles && `${pushed.profiles} profile(s) to the ERP`,
     conflicts && `${conflicts} ERP change(s) overridden by changes made here`,
-    deferred && `${deferred} delete(s) waiting for their alerts to reach the ERP`,
+    deferred &&
+      `${deferred} delete(s) waiting for their alerts to reach the ERP`,
   ].filter(Boolean);
-  return parts.length > 0 ? `Synced: ${parts.join(', ')}` : 'Already in sync with the ERP';
+  return parts.length > 0
+    ? `Synced: ${parts.join(', ')}`
+    : 'Already in sync with the ERP';
 }
 
 // Runs the full two-way sync with the ERP now, instead of waiting for the next scheduled one.
@@ -48,7 +56,9 @@ export function ErpSyncNowButton() {
     </Button>
   );
   return status && !status.configured ? (
-    <Tooltip title="The ERP connection is not configured on the server">{button}</Tooltip>
+    <Tooltip title="The ERP connection is not configured on the server">
+      {button}
+    </Tooltip>
   ) : (
     button
   );

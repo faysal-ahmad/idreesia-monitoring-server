@@ -15,6 +15,9 @@ export class SystemController {
   @Post('reload')
   @HttpCode(204)
   async reload() {
-    await Promise.all([this.videoIngestion.reconcile(), this.matchCache.refresh()]);
+    await Promise.all([
+      this.videoIngestion.reconcile(),
+      this.matchCache.refresh(),
+    ]);
   }
 }

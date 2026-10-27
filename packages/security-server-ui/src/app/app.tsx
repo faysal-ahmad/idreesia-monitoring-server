@@ -10,7 +10,14 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Flex, Layout, Menu, Tooltip } from 'antd';
 import { useState } from 'react';
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import {
+  Link,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 import { authApi, SESSION_QUERY_KEY } from '../api/auth';
 import AdminRoute, { useAdminSession } from '../components/admin-route';
 import AlertsPage from '../pages/alerts-page';
@@ -26,14 +33,26 @@ const SIDEBAR_COLLAPSED_WIDTH = 56;
 // Only the admin section has a sidebar; the public Alerts page links to it from the header instead.
 // Alerts is listed here too, as the way back out.
 const ADMIN_NAV_ITEMS = [
-  { key: '/alerts', icon: <AlertOutlined />, label: <Link to="/alerts">Alerts</Link> },
-  { key: '/admin/channels', icon: <CameraOutlined />, label: <Link to="/admin/channels">Channels</Link> },
+  {
+    key: '/alerts',
+    icon: <AlertOutlined />,
+    label: <Link to="/alerts">Alerts</Link>,
+  },
+  {
+    key: '/admin/channels',
+    icon: <CameraOutlined />,
+    label: <Link to="/admin/channels">Channels</Link>,
+  },
   {
     key: '/admin/monitoring-profiles',
     icon: <UserOutlined />,
     label: <Link to="/admin/monitoring-profiles">Monitoring Profiles</Link>,
   },
-  { key: '/admin/configuration', icon: <SettingOutlined />, label: <Link to="/admin/configuration">Configuration</Link> },
+  {
+    key: '/admin/configuration',
+    icon: <SettingOutlined />,
+    label: <Link to="/admin/configuration">Configuration</Link>,
+  },
 ];
 
 export function App() {
@@ -46,13 +65,17 @@ export function App() {
   const isAdminSection = location.pathname.startsWith('/admin');
   // Logged out, the admin section is just the login form, so there's nothing for a sidebar to list.
   const showSidebar = isAdminSection && isAdmin;
-  const selectedKey = ADMIN_NAV_ITEMS.find((item) => location.pathname.startsWith(item.key))?.key;
+  const selectedKey = ADMIN_NAV_ITEMS.find((item) =>
+    location.pathname.startsWith(item.key),
+  )?.key;
 
   // Drops every cached admin query along with the session, then leaves the admin section.
   const logoutMutation = useMutation({
     mutationFn: authApi.logout,
     onSuccess: () => {
-      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== 'alerts' });
+      queryClient.removeQueries({
+        predicate: (query) => query.queryKey[0] !== 'alerts',
+      });
       queryClient.setQueryData(SESSION_QUERY_KEY, { authenticated: false });
       navigate('/alerts');
     },
@@ -63,19 +86,30 @@ export function App() {
     // pinned to the bottom of the screen on long pages.
     <Layout style={{ height: '100vh' }}>
       <Header style={{ display: 'flex', alignItems: 'center' }}>
-        <Link to="/alerts" style={{ color: 'white', fontSize: 18, fontWeight: 600 }}>
+        <Link
+          to="/alerts"
+          style={{ color: 'white', fontSize: 18, fontWeight: 600 }}
+        >
           Security Server
         </Link>
         <div style={{ marginLeft: 'auto' }}>
           {!isAdminSection && (
             <Tooltip title="Admin">
-              <Link to="/admin" aria-label="Admin" style={{ color: 'white', fontSize: 20, display: 'flex' }}>
+              <Link
+                to="/admin"
+                aria-label="Admin"
+                style={{ color: 'white', fontSize: 20, display: 'flex' }}
+              >
                 <SettingOutlined />
               </Link>
             </Tooltip>
           )}
           {isAdminSection && isAdmin && (
-            <Button icon={<LogoutOutlined />} loading={logoutMutation.isPending} onClick={() => logoutMutation.mutate()}>
+            <Button
+              icon={<LogoutOutlined />}
+              loading={logoutMutation.isPending}
+              onClick={() => logoutMutation.mutate()}
+            >
               Log out
             </Button>
           )}
@@ -95,14 +129,28 @@ export function App() {
           >
             <Flex vertical className="app-shell-sidebar-inner">
               <div className="app-shell-sidebar-menu">
-                <Menu mode="inline" selectedKeys={selectedKey ? [selectedKey] : []} items={ADMIN_NAV_ITEMS} />
+                <Menu
+                  mode="inline"
+                  selectedKeys={selectedKey ? [selectedKey] : []}
+                  items={ADMIN_NAV_ITEMS}
+                />
               </div>
               <Button
                 type="link"
                 className="app-shell-sidebar-collapse"
-                icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                icon={
+                  sidebarCollapsed ? (
+                    <MenuUnfoldOutlined />
+                  ) : (
+                    <MenuFoldOutlined />
+                  )
+                }
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                style={{ fontSize: '16px', width: SIDEBAR_COLLAPSED_WIDTH, height: 64 }}
+                style={{
+                  fontSize: '16px',
+                  width: SIDEBAR_COLLAPSED_WIDTH,
+                  height: 64,
+                }}
               />
             </Flex>
           </Sider>
@@ -112,9 +160,15 @@ export function App() {
             <Routes>
               <Route path="/alerts" element={<AlertsPage />} />
               <Route path="/admin" element={<AdminRoute />}>
-                <Route index element={<Navigate to="/admin/channels" replace />} />
+                <Route
+                  index
+                  element={<Navigate to="/admin/channels" replace />}
+                />
                 <Route path="channels" element={<ChannelsPage />} />
-                <Route path="monitoring-profiles" element={<MonitoringProfilesPage />} />
+                <Route
+                  path="monitoring-profiles"
+                  element={<MonitoringProfilesPage />}
+                />
                 <Route path="configuration" element={<ConfigurationPage />} />
               </Route>
               <Route path="*" element={<Navigate to="/alerts" replace />} />

@@ -1,5 +1,10 @@
 import { api } from './client';
-import { RtspConfig, TestMatchResult, VerifyResult, VideoFeedSource } from './types';
+import {
+  RtspConfig,
+  TestMatchResult,
+  VerifyResult,
+  VideoFeedSource,
+} from './types';
 
 export interface CreateVideoFeedSourceInput {
   name: string;
@@ -24,10 +29,13 @@ export interface VerifyVideoFeedSourceInput {
 export const videoFeedSourcesApi = {
   list: () => api.get<VideoFeedSource[]>('/video-feed-sources'),
   get: (id: string) => api.get<VideoFeedSource>(`/video-feed-sources/${id}`),
-  create: (input: CreateVideoFeedSourceInput) => api.post<VideoFeedSource>('/video-feed-sources', input),
+  create: (input: CreateVideoFeedSourceInput) =>
+    api.post<VideoFeedSource>('/video-feed-sources', input),
   update: (id: string, input: UpdateVideoFeedSourceInput) =>
     api.patch<VideoFeedSource>(`/video-feed-sources/${id}`, input),
   remove: (id: string) => api.delete<void>(`/video-feed-sources/${id}`),
-  verify: (input: VerifyVideoFeedSourceInput) => api.post<VerifyResult>('/video-feed-sources/verify', input),
-  testMatch: (id: string) => api.post<TestMatchResult>(`/video-feed-sources/${id}/test-match`),
+  verify: (input: VerifyVideoFeedSourceInput) =>
+    api.post<VerifyResult>('/video-feed-sources/verify', input),
+  testMatch: (id: string) =>
+    api.post<TestMatchResult>(`/video-feed-sources/${id}/test-match`),
 };
