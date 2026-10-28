@@ -1,46 +1,142 @@
-FROM node:24.22.1-bookworm-slim AS build
+# CUDA build of the security server, published by the release workflow and run by
+# docker-compose.production.yml. Same app as Dockerfile.production-local, but OpenCV is built from
+# source with its CUDA DNN backend so the face models can run on the GPU (OPENCV_DNN_TARGET=cuda in
+# .env, see src/recognition/dnn-target.ts).
+#
+# CUDA 12.x images run on any host driver >= 525 (CUDA minor version compatibility).
+# CUDA_ARCH_BIN lists the GPU architectures compiled ahead of time: 6.1 Pascal (GTX 10xx),
+# 7.5 Turing (RTX 20xx, T4), 8.6 Ampere (RTX 30xx, A2-A40), 8.9 Ada (RTX 40xx, L4). The 8.9 PTX
+# lets newer GPUs JIT-compile the kernels on first use. Narrowing the list to the server's own GPU
+# shortens the build a lot.
+ARG CUDA_VERSION=12.6.3
+ARG NODE_VERSION=24.22.1
 
-# opencv headers + libopencv_* runtime libs for @u4/opencv4nodejs
-# to compile its bindings against
-# build-essential/python3/pkg-config: native build toolchain
+# Only used as a source for the node and yarn binaries
+FROM node:${NODE_VERSION}-bookworm-slim AS node
+
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04 AS opencv
+
+ARG OPENCV_VERSION=4.10.0
+ARG CUDA_ARCH_BIN="6.1;7.5;8.6;8.9"
+ARG CUDA_ARCH_PTX="8.9"
+
+# cmake/build-essential: OpenCV build toolchain
+# libav*-dev: ffmpeg, which videoio uses to read the RTSP re-streams from go2rtc
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  libopencv-dev \
+  build-essential \
+  cmake \
+  curl \
+  ca-certificates \
+  pkg-config \
+  libavcodec-dev \
+  libavformat-dev \
+  libavutil-dev \
+  libswscale-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp
+
+RUN curl -fsSL "https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSION}.tar.gz" | tar -xz && \
+  curl -fsSL "https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VERSION}.tar.gz" | tar -xz
+
+# The CUDA DNN backend needs opencv_contrib's cudev module; the rest of contrib (including its CUDA
+# image-processing modules) isn't used, so only cudev is added. Image codecs are built in rather
+# than linked from the system, so the runtime stage only needs the ffmpeg libraries.
+RUN cmake -S "opencv-${OPENCV_VERSION}" -B build \
+  -D CMAKE_BUILD_TYPE=Release \
+  -D CMAKE_INSTALL_PREFIX=/opt/opencv \
+  -D OPENCV_EXTRA_MODULES_PATH="/tmp/opencv_contrib-${OPENCV_VERSION}/modules/cudev" \
+  -D WITH_CUDA=ON \
+  -D WITH_CUDNN=ON \
+  -D WITH_CUBLAS=ON \
+  -D OPENCV_DNN_CUDA=ON \
+  -D CUDA_ARCH_BIN="${CUDA_ARCH_BIN}" \
+  -D CUDA_ARCH_PTX="${CUDA_ARCH_PTX}" \
+  -D WITH_NVCUVID=OFF \
+  -D WITH_NVCUVENC=OFF \
+  -D WITH_FFMPEG=ON \
+  -D WITH_GSTREAMER=OFF \
+  -D WITH_V4L=OFF \
+  -D WITH_GTK=OFF \
+  -D WITH_QT=OFF \
+  -D WITH_OPENCL=OFF \
+  -D WITH_OPENEXR=OFF \
+  -D WITH_EIGEN=OFF \
+  -D BUILD_JPEG=ON \
+  -D BUILD_PNG=ON \
+  -D BUILD_TIFF=ON \
+  -D BUILD_WEBP=ON \
+  -D BUILD_OPENJPEG=ON \
+  -D BUILD_opencv_gapi=OFF \
+  -D BUILD_opencv_apps=OFF \
+  -D BUILD_opencv_python3=OFF \
+  -D BUILD_opencv_java=OFF \
+  -D BUILD_TESTS=OFF \
+  -D BUILD_PERF_TESTS=OFF \
+  -D BUILD_EXAMPLES=OFF \
+  -D BUILD_DOCS=OFF && \
+  cmake --build build --parallel "$(nproc)" && \
+  cmake --install build && \
+  rm -rf /tmp/*
+
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04 AS build
+
+# libav*-dev: headers/libs the OpenCV build above links against
+# build-essential/python3/pkg-config: native build toolchain for @u4/opencv4nodejs
+RUN apt-get update && apt-get install -y --no-install-recommends \
   build-essential \
   python3 \
   pkg-config \
+  ca-certificates \
+  libavcodec-dev \
+  libavformat-dev \
+  libavutil-dev \
+  libswscale-dev \
   && rm -rf /var/lib/apt/lists/*
 
-# Compile @u4/opencv4nodejs against the apt-installed OpenCV instead of
-# triggering its own OpenCV source build
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /opt /opt
+RUN ln -s /opt/yarn-v*/bin/yarn /usr/local/bin/yarn
+
+COPY --from=opencv /opt/opencv /opt/opencv
+RUN echo /opt/opencv/lib > /etc/ld.so.conf.d/opencv.conf && ldconfig
+
+# Compile @u4/opencv4nodejs against the CUDA OpenCV build instead of triggering its own build
 ENV OPENCV4NODEJS_DISABLE_AUTOBUILD=1
-ENV OPENCV_INCLUDE_DIR=/usr/include/opencv4
+ENV OPENCV_INCLUDE_DIR=/opt/opencv/include/opencv4
+ENV OPENCV_LIB_DIR=/opt/opencv/lib
 
 WORKDIR /app
 
 COPY . .
 
-# OPENCV_LIB_DIR is architecture-dependent (Debian installs libs under the
-# multiarch triplet dir, e.g. /usr/lib/aarch64-linux-gnu) — resolved via gcc
-# rather than hardcoded, so this build works on both amd64 and arm64 hosts.
-RUN export OPENCV_LIB_DIR="/usr/lib/$(gcc -print-multiarch)" && \
-  yarn install --frozen-lockfile
+RUN yarn install --frozen-lockfile
+# Fail the build if the bindings didn't end up on a CUDA-enabled OpenCV
+RUN node -e "const info = require('@u4/opencv4nodejs').getBuildInformation(); \
+  if (!/NVIDIA CUDA:\s+YES/.test(info) || !/cuDNN:\s+YES/.test(info)) { console.error(info); process.exit(1); }"
 RUN yarn nx run @idreesia/security-server:prisma-generate
 RUN yarn nx run @idreesia/security-server:build
 
-FROM node:24.22.1-bookworm-slim AS production
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu24.04 AS production
 
 # postgresql-client/openssl: db access
-# libopencv-dev: runtime libopencv_*.so libs for the bindings compiled in the
-# build stage above (installing the -dev metapackage rather than hand-picking
-# the specific runtime submodules keeps this in step with whatever the
-# compiled addon actually links against); libopencv-videoio's own dependencies
-# already cover ffmpeg, so no separate ffmpeg package is needed
+# libav*: ffmpeg runtime libraries the OpenCV build links against
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   postgresql-client \
   openssl \
-  libopencv-dev \
+  libavcodec60 \
+  libavformat60 \
+  libavutil58 \
+  libswscale7 \
   && rm -rf /var/lib/apt/lists/*
+
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /opt /opt
+RUN ln -s /opt/yarn-v*/bin/yarn /usr/local/bin/yarn
+
+COPY --from=opencv /opt/opencv/lib /opt/opencv/lib
+RUN echo /opt/opencv/lib > /etc/ld.so.conf.d/opencv.conf && ldconfig
 
 WORKDIR /app
 

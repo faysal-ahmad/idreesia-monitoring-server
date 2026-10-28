@@ -156,6 +156,14 @@ jobs:
           - name: security-server-ui
             dockerfile: packages/security-server-ui/Dockerfile.production
     steps:
+      # The CUDA devel base image plus the OpenCV build need more than a runner's default free disk;
+      # drop preinstalled toolchains this job doesn't use
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h /
+
       # Build exactly the tagged release commit, so a re-run publishes the same code
       - name: Checkout Release Tag
         uses: actions/checkout@v7
