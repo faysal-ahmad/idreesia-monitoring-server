@@ -9,6 +9,7 @@ import * as cv from '@u4/opencv4nodejs';
 import { MediaServerService } from '../media-server/media-server.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AlertPipelineService } from './alert-pipeline.service';
+import { UsageStatsService } from './usage-stats.service';
 
 // Frames are always read (to stay near-live and drain the stream buffer), but only handed off
 // downstream at the channel's recognitionFps, to cap CPU load. Paced by time rather than by
@@ -99,6 +100,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly mediaServer: MediaServerService,
     private readonly alertPipeline: AlertPipelineService,
+    private readonly stats: UsageStatsService,
   ) {}
 
   async onModuleInit() {
@@ -233,6 +235,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
           );
         } catch (error) {
           loop.reconnectAttempts++;
+          this.stats.reconnect(loop.channel.id);
           if (loop.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
             await this.disableUnreachableChannel(
               loop,
@@ -262,6 +265,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
 
       if (!frame || frame.empty) {
         frame?.release();
+        this.stats.readFailure(loop.channel.id);
         loop.consecutiveFailures++;
         if (loop.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
           this.logger.warn(
@@ -271,6 +275,7 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
           loop.capture = undefined;
           loop.consecutiveFailures = 0;
           loop.reconnectAttempts++;
+          this.stats.reconnect(loop.channel.id);
           if (loop.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
             await this.disableUnreachableChannel(
               loop,
@@ -286,10 +291,13 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
       loop.consecutiveFailures = 0;
       loop.reconnectAttempts = 0;
       loop.lastFrameAt = Date.now();
+      this.stats.frameRead(loop.channel.id, frame.cols, frame.rows);
       const intervalMs = 1000 / loop.channel.recognitionFps;
       const now = Date.now();
-      if (now - loop.lastProcessedAt >= intervalMs && !loop.processing) {
+      const due = now - loop.lastProcessedAt >= intervalMs;
+      if (due && !loop.processing) {
         loop.lastProcessedAt = now;
+        this.stats.frameProcessed(loop.channel.id);
         const downscaled = frame.rescale(DOWNSCALE_FACTOR);
         // Free the full-resolution buffer now rather than leaving it to GC.
         frame.release();
@@ -306,6 +314,8 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
             loop.processing = false;
           });
       } else {
+        // Due but still busy with the previous frame means recognition can't keep up.
+        this.stats.frameSkipped(loop.channel.id, due ? 'busy' : 'fps');
         // Cameras deliver far more frames than are sampled for recognition. A frame left unreleased
         // is freed by a GC finalizer, and that churn (every dropped frame, on every channel) is what
         // triggers the V8 fatal error in Isolate::AdjustAmountOfExternalAllocatedMemory.
