@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import * as cv from '@u4/opencv4nodejs';
+import { applyDnnTarget } from './dnn-target';
 import { YUNET_MODEL_PATH } from './model-paths';
 import { DetectedFace } from './recognition.types';
 
@@ -33,6 +34,7 @@ export class FaceDetectionService implements OnModuleInit {
 
   onModuleInit() {
     this.net = cv.readNetFromONNX(YUNET_MODEL_PATH);
+    applyDnnTarget(this.net, 'YuNet');
   }
 
   // scoreThreshold: 0.6-0.9 is a moderately permissive default per the plan's quality-gate guidance

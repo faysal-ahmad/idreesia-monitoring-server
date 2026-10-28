@@ -42,11 +42,26 @@ Releases run from `.github/workflows/release.yml`; the version logic lives in `s
 
 ### Deploying the published images
 
-`docker-compose.production-cuda.yml` runs the published `latest` images instead of building locally. The packages are public, so the host can pull them without logging in:
+`docker-compose.production.yml` runs the published `latest` images. The `security-server` image is built from `packages/security-server/Dockerfile.production` with a CUDA-enabled OpenCV, and the compose file passes the host's NVIDIA GPUs through to it. The host needs:
+
+- an NVIDIA driver supporting CUDA 12 (driver 525 or newer)
+- the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+- `OPENCV_DNN_TARGET=cuda` in `.env`, so the face models run on the GPU (without it they stay on the CPU)
+
+Both production compose files read their settings from a `.env` file next to them. Copy `.env.sample` to `.env` and fill in the values.
+
+The packages are public, so the host can pull them without logging in:
 
 ```
-yarn docker:production-cuda:pull
-yarn docker:production-cuda:up
+yarn docker:production:pull
+yarn docker:production:up
+```
+
+To build CPU-only images locally instead (for example on a machine without a GPU), use `docker-compose.production-local.yml`:
+
+```
+yarn docker:production-local:build
+yarn docker:production-local:up
 ```
 
 ## Keep TypeScript project references up to date
