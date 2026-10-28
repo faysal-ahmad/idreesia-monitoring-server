@@ -64,6 +64,24 @@ yarn docker:production-local:build
 yarn docker:production-local:up
 ```
 
+### Container logs
+
+Both production compose files send every container's logs to the host's systemd journal (`journald` log driver), so they outlive the containers. Bound their disk use by capping the journal at 2 GB once on the host (this applies to the whole journal, not just Docker; once the cap is reached, journald deletes the oldest entries first):
+
+```
+sudo mkdir -p /etc/systemd/journald.conf.d
+printf '[Journal]\nStorage=persistent\nSystemMaxUse=2G\n' | sudo tee /etc/systemd/journald.conf.d/retention.conf
+sudo systemctl restart systemd-journald
+```
+
+Read them with `journalctl` (add `-f` to follow, `--since today` to narrow):
+
+```
+journalctl CONTAINER_NAME=idreesia-security-server-security-server-1
+```
+
+Containers need recreating once (`yarn docker:production:up`) to pick up the new log driver. `docker logs` still works for containers using it.
+
 ## Keep TypeScript project references up to date
 
 Nx automatically updates TypeScript [project references](https://www.typescriptlang.org/docs/handbook/project-references.html) in `tsconfig.json` files to ensure they remain accurate based on your project dependencies (`import` or `require` statements). This sync is automatically done when running tasks such as `build` or `typecheck`, which require updated references to function correctly.

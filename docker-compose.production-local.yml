@@ -1,10 +1,17 @@
 # Builds the CPU-only images locally (security-server from Dockerfile.production-local), for running
 # without a GPU or testing a production build before a release. The production server runs
 # docker-compose.production.yml, which uses the images published by the release workflow instead.
+# Container logs go to the host's systemd journal rather than the container's own json-file, so
+# they survive container removal/recreation (docker compose down/up, upgrades). Size is capped
+# host-side (see README: journald SystemMaxUse). Read with: journalctl CONTAINER_NAME=<name>
+x-logging: &default-logging
+  driver: journald
+
 services:
   postgres:
     image: pgvector/pgvector:0.8.7-pg18-bookworm
     restart: unless-stopped
+    logging: *default-logging
     env_file: .env
     volumes:
       - ${POSTGRES_DATA_HOST_DIR:-/data/postgres/data}:/var/lib/postgresql:cached
@@ -23,6 +30,7 @@ services:
   go2rtc:
     image: alexxit/go2rtc:1.9.14
     restart: unless-stopped
+    logging: *default-logging
     command:
       - go2rtc
       - -config
@@ -41,6 +49,7 @@ services:
       go2rtc:
         condition: service_started
     restart: unless-stopped
+    logging: *default-logging
     env_file: .env
     # If the process dies from a native crash, don't let the host dump its multi-GB core: the dump
     # can keep the dying process alive for minutes, so the container looks "Up" but serves nothing
@@ -75,3 +84,4 @@ services:
     ports:
       - '80:4200'
     restart: unless-stopped
+    logging: *default-logging
