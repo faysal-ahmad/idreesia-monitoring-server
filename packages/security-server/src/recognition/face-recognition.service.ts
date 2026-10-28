@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import * as cv from '@u4/opencv4nodejs';
+import { applyDnnTarget } from './dnn-target';
 import { SFACE_MODEL_PATH } from './model-paths';
 
 // SFace's canonical alignment target — 5 reference points for a 112x112 crop,
@@ -214,6 +215,7 @@ export class FaceRecognitionService implements OnModuleInit {
 
   onModuleInit() {
     this.net = cv.readNetFromONNX(SFACE_MODEL_PATH);
+    applyDnnTarget(this.net, 'SFace');
   }
 
   align(image: cv.Mat, landmarks: [number, number][]): cv.Mat {

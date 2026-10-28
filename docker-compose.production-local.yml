@@ -1,7 +1,6 @@
-# Production setup for the CUDA host. Runs the images that release.yml publishes to GHCR on every
-# develop -> master merge, instead of building them locally like docker-compose.production.yml.
-# The images are CPU-only for now. The GHCR packages are public, so the host can pull without logging in.
-# Upgrade with: yarn docker:production-cuda:pull && yarn docker:production-cuda:up
+# Builds the CPU-only images locally (security-server from Dockerfile.production-local), for running
+# without a GPU or testing a production build before a release. The production server runs
+# docker-compose.production.yml, which uses the images published by the release workflow instead.
 services:
   postgres:
     image: pgvector/pgvector:0.8.7-pg18-bookworm
@@ -33,7 +32,9 @@ services:
     # No published ports: only the security server and the UI's nginx (same network) reach it.
 
   security-server:
-    image: ghcr.io/faysal-ahmad/idreesia-security-server/security-server:latest
+    build:
+      context: .
+      dockerfile: ./packages/security-server/Dockerfile.production-local
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,16 +63,15 @@ services:
       start_period: 90s
     volumes:
       # Alert frame images (see ALERT_IMAGES_DIR) on a folder on the host machine. The server runs as
-      # UID 1001 (see packages/security-server/Dockerfile.production), so that folder must be writable by UID 1001.
+      # UID 1001 (see packages/security-server/Dockerfile.production-local), so that folder must be writable by UID 1001.
       - ${ALERT_IMAGES_HOST_DIR:-/data/alert-images}:/data/alert-images
 
   security-server-ui:
-    image: ghcr.io/faysal-ahmad/idreesia-security-server/security-server-ui:latest
+    build:
+      context: .
+      dockerfile: ./packages/security-server-ui/Dockerfile.production
     depends_on:
       - security-server
     ports:
       - '80:4200'
     restart: unless-stopped
-
-volumes:
-  postgres-data: {}

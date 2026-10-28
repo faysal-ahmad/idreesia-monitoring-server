@@ -1,3 +1,7 @@
+# Production setup. Runs the images that release.yml publishes to GHCR on every develop -> master
+# merge; to build CPU-only images locally instead, use docker-compose.production-local.yml.
+# The GHCR packages are public, so the host can pull without logging in.
+# Upgrade with: yarn docker:production:pull && yarn docker:production:up
 services:
   postgres:
     image: pgvector/pgvector:0.8.7-pg18-bookworm
@@ -29,9 +33,7 @@ services:
     # No published ports: only the security server and the UI's nginx (same network) reach it.
 
   security-server:
-    build:
-      context: .
-      dockerfile: ./packages/security-server/Dockerfile.production
+    image: ghcr.io/faysal-ahmad/idreesia-security-server/security-server:latest
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,6 +41,15 @@ services:
         condition: service_started
     restart: unless-stopped
     env_file: .env
+    # Pass the host's NVIDIA GPUs through for the CUDA DNN backend (OPENCV_DNN_TARGET=cuda in .env).
+    # Needs the NVIDIA Container Toolkit on the host.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     # If the process dies from a native crash, don't let the host dump its multi-GB core: the dump
     # can keep the dying process alive for minutes, so the container looks "Up" but serves nothing
     # and `restart: unless-stopped` never gets to restart it.
@@ -60,18 +71,13 @@ services:
       start_period: 90s
     volumes:
       # Alert frame images (see ALERT_IMAGES_DIR) on a folder on the host machine. The server runs as
-      # UID 1001 (see Dockerfile.production), so that folder must be writable by UID 1001.
+      # UID 1001 (see packages/security-server/Dockerfile.production), so that folder must be writable by UID 1001.
       - ${ALERT_IMAGES_HOST_DIR:-/data/alert-images}:/data/alert-images
 
   security-server-ui:
-    build:
-      context: .
-      dockerfile: ./packages/security-server-ui/Dockerfile.production
+    image: ghcr.io/faysal-ahmad/idreesia-security-server/security-server-ui:latest
     depends_on:
       - security-server
     ports:
       - '80:4200'
     restart: unless-stopped
-
-volumes:
-  postgres-data: {}
