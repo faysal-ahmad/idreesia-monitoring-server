@@ -125,6 +125,16 @@ export class ErpAlertPushService implements OnModuleInit, OnModuleDestroy {
     for (const { id } of pending) {
       if ((await this.push(id)) === 'unreachable') return;
     }
+    // Sent on every run, even one with nothing to send, so the ERP's alerts page can show when
+    // this server last got through - a quiet camera then isn't mistaken for a dead server.
+    try {
+      await this.client.request('POST', '/alerts/heartbeat', { body: {} });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.lastError = message;
+      this.logger.warn(`Could not check in with the ERP: ${message}`);
+      return;
+    }
     this.lastError = null;
   }
 
