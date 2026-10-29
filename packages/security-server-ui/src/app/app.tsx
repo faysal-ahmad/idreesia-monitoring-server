@@ -1,6 +1,7 @@
 import {
   AlertOutlined,
   CameraOutlined,
+  DashboardOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -24,6 +25,7 @@ import AlertsPage from '../pages/alerts-page';
 import ChannelsPage from '../pages/channels-page';
 import ConfigurationPage from '../pages/configuration-page';
 import MonitoringProfilesPage from '../pages/monitoring-profiles-page';
+import UsagePage from '../pages/usage-page';
 
 const { Header, Sider, Content } = Layout;
 
@@ -42,6 +44,11 @@ const ADMIN_NAV_ITEMS = [
     key: '/admin/channels',
     icon: <CameraOutlined />,
     label: <Link to="/admin/channels">Channels</Link>,
+  },
+  {
+    key: '/admin/usage',
+    icon: <DashboardOutlined />,
+    label: <Link to="/admin/usage">Usage</Link>,
   },
   {
     key: '/admin/monitoring-profiles',
@@ -165,6 +172,7 @@ export function App() {
                   element={<Navigate to="/admin/channels" replace />}
                 />
                 <Route path="channels" element={<ChannelsPage />} />
+                <Route path="usage" element={<UsagePage />} />
                 <Route
                   path="monitoring-profiles"
                   element={<MonitoringProfilesPage />}

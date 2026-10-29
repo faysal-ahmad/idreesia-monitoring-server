@@ -223,7 +223,7 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private get enabled(): boolean {
+  get enabled(): boolean {
     return this.intervalSeconds > 0;
   }
 
