@@ -1,6 +1,6 @@
 {
   "name": "@idreesia/security-server",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "MIT",
   "scripts": {
     "compose:development": "docker compose --file docker-compose.development.yml --project-name idreesia-security-server",
