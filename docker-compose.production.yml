@@ -2,10 +2,17 @@
 # merge; to build CPU-only images locally instead, use docker-compose.production-local.yml.
 # The GHCR packages are public, so the host can pull without logging in.
 # Upgrade with: yarn docker:production:pull && yarn docker:production:up
+# Container logs go to the host's systemd journal rather than the container's own json-file, so
+# they survive container removal/recreation (docker compose down/up, upgrades). Size is capped
+# host-side (see README: journald SystemMaxUse). Read with: journalctl CONTAINER_NAME=<name>
+x-logging: &default-logging
+  driver: journald
+
 services:
   postgres:
     image: pgvector/pgvector:0.8.7-pg18-bookworm
     restart: unless-stopped
+    logging: *default-logging
     env_file: .env
     volumes:
       - ${POSTGRES_DATA_HOST_DIR:-/data/postgres/data}:/var/lib/postgresql:cached
@@ -24,6 +31,7 @@ services:
   go2rtc:
     image: alexxit/go2rtc:1.9.14
     restart: unless-stopped
+    logging: *default-logging
     command:
       - go2rtc
       - -config
@@ -40,6 +48,7 @@ services:
       go2rtc:
         condition: service_started
     restart: unless-stopped
+    logging: *default-logging
     env_file: .env
     # Pass the host's NVIDIA GPUs through for the CUDA DNN backend (OPENCV_DNN_TARGET=cuda in .env).
     # Needs the NVIDIA Container Toolkit on the host.
@@ -81,3 +90,4 @@ services:
     ports:
       - '80:4200'
     restart: unless-stopped
+    logging: *default-logging

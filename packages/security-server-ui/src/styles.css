@@ -185,3 +185,16 @@
   row-gap: 4px;
   min-height: 32px;
 }
+
+.usage-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.usage-tile-subtext {
+  margin-top: 4px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+}

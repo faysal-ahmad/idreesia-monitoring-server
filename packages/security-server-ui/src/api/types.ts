@@ -134,3 +134,47 @@ export interface ErpSyncSummary {
   // Deleted, but kept until their alerts reach the ERP.
   deferred: number;
 }
+
+// Averages and maxima are over the stats windows in the range; "latest" values are from its last
+// window.
+export interface ServerUsage {
+  windowCount: number;
+  activeChannels: number;
+  dnnTarget: string;
+  inferenceBusyAvgPct: number | null;
+  inferenceBusyMaxPct: number | null;
+  // Null when no NVIDIA GPU is visible.
+  gpuUtilAvgPct: number | null;
+  gpuUtilMaxPct: number | null;
+  gpuMemUsedMb: number | null;
+  gpuMemTotalMb: number | null;
+  // Percent of one core, so 250 = 2.5 cores.
+  cpuAvgPct: number | null;
+  cpuCores: number;
+  eventLoopLagP95Ms: number | null;
+  eventLoopLagMaxMs: number | null;
+}
+
+export interface ChannelUsage {
+  channelId: string;
+  name: string;
+  recognitionFps: number;
+  frameWidth: number | null;
+  frameHeight: number | null;
+  readFps: number;
+  processedFps: number;
+  busySkipPct: number;
+  inferenceSharePct: number;
+  faces: number;
+  readFailures: number;
+  reconnects: number;
+}
+
+export interface UsageStatsSummary {
+  minutes: number;
+  // false when STATS_INTERVAL_SECONDS=0 on the server.
+  statsEnabled: boolean;
+  coveredSeconds: number;
+  server: ServerUsage | null;
+  channels: ChannelUsage[];
+}

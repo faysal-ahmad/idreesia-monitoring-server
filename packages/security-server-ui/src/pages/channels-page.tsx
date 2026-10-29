@@ -214,6 +214,11 @@ export default function ChannelsPage() {
               render: (enabled: boolean) => (enabled ? 'Yes' : 'No'),
             },
             {
+              title: 'Recognition Rate',
+              dataIndex: 'recognitionFps',
+              render: (value: number) => `${value} fps`,
+            },
+            {
               title: 'Similarity Threshold',
               dataIndex: 'similarityThreshold',
               render: (value: number | null) =>

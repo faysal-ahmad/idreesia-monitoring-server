@@ -6,6 +6,7 @@ import { FaceDetectionService } from '../recognition/face-detection.service';
 import { FaceRecognitionService } from '../recognition/face-recognition.service';
 import { DetectedFace } from '../recognition/recognition.types';
 import { resolveSimilarityThreshold } from '../recognition/similarity-threshold';
+import { UsageStatsService } from './usage-stats.service';
 import { FaceMatchCacheService } from './face-match-cache.service';
 
 // Without this, one person standing in front of a camera for a few seconds would insert
@@ -24,10 +25,17 @@ export class AlertPipelineService {
     private readonly faceDetection: FaceDetectionService,
     private readonly faceRecognition: FaceRecognitionService,
     private readonly matchCache: FaceMatchCacheService,
+    private readonly stats: UsageStatsService,
   ) {}
 
   async processFrame(channel: VideoFeedSource, frame: cv.Mat) {
+    const detectStartedAt = performance.now();
     const faces = this.faceDetection.detect(frame);
+    this.stats.inference(
+      channel.id,
+      'detect',
+      performance.now() - detectStartedAt,
+    );
     if (faces.length === 0) return;
 
     const threshold = resolveSimilarityThreshold(channel.similarityThreshold);
@@ -36,7 +44,13 @@ export class AlertPipelineService {
       const aligned = this.faceRecognition.align(frame, face.landmarks);
       let embedding: number[];
       try {
+        const embedStartedAt = performance.now();
         embedding = this.faceRecognition.embed(aligned);
+        this.stats.inference(
+          channel.id,
+          'embed',
+          performance.now() - embedStartedAt,
+        );
       } finally {
         aligned.release();
       }

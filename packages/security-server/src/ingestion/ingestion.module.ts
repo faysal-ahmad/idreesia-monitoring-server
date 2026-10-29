@@ -6,6 +6,9 @@ import { RecognitionModule } from '../recognition/recognition.module';
 import { AlertPipelineService } from './alert-pipeline.service';
 import { ChannelHealthController } from './channel-health.controller';
 import { FaceMatchCacheService } from './face-match-cache.service';
+import { UsageStatsController } from './usage-stats.controller';
+import { UsageStatsQueryService } from './usage-stats-query.service';
+import { UsageStatsService } from './usage-stats.service';
 import { VideoIngestionService } from './video-ingestion.service';
 
 @Module({
@@ -15,11 +18,13 @@ import { VideoIngestionService } from './video-ingestion.service';
     AlertModule,
     MediaServerModule,
   ],
-  controllers: [ChannelHealthController],
+  controllers: [ChannelHealthController, UsageStatsController],
   providers: [
     VideoIngestionService,
     AlertPipelineService,
     FaceMatchCacheService,
+    UsageStatsService,
+    UsageStatsQueryService,
   ],
   // Both are re-synced on demand rather than polled — by the ERP sync after it applies changes,
   // and by SystemController's /system/reload, which the UI calls after any channel, profile or
