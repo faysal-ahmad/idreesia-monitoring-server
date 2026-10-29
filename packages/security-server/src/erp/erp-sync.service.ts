@@ -35,6 +35,9 @@ type ChangedChannel =
       enabled: boolean;
       similarityThreshold: number | null;
       recognitionFps: number;
+      // Absent from an ERP that predates the face checks - read as null.
+      minFaceSizePx?: number | null;
+      minFaceQuality?: number | null;
       connection: {
         host: string;
         port: number | null;
@@ -99,6 +102,8 @@ function channelDiffers(
     local.enabled !== remote.enabled ||
     local.similarityThreshold !== remote.similarityThreshold ||
     local.recognitionFps !== remote.recognitionFps ||
+    local.minFaceSizePx !== (remote.minFaceSizePx ?? null) ||
+    local.minFaceQuality !== (remote.minFaceQuality ?? null) ||
     CONFIG_KEYS.some((key) => localConfig[key] !== remoteConfig[key])
   );
 }
@@ -301,6 +306,8 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       enabled: remote.enabled,
       similarityThreshold: remote.similarityThreshold,
       recognitionFps: remote.recognitionFps,
+      minFaceSizePx: remote.minFaceSizePx ?? null,
+      minFaceQuality: remote.minFaceQuality ?? null,
       config: toRtspConfig(remote),
       updatedAt,
     };
@@ -481,6 +488,8 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
             enabled: channel.enabled,
             similarityThreshold: channel.similarityThreshold,
             recognitionFps: channel.recognitionFps,
+            minFaceSizePx: channel.minFaceSizePx,
+            minFaceQuality: channel.minFaceQuality,
             connection: {
               host: config.host,
               port: config.port,

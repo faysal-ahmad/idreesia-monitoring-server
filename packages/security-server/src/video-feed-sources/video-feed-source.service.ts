@@ -9,7 +9,13 @@ import { parsePgVector } from '../common/pgvector.util';
 import { MediaServerService } from '../media-server/media-server.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaceDetectionService } from '../recognition/face-detection.service';
+import {
+  detectionScaleFor,
+  resolveMinFaceSize,
+  unscaleFace,
+} from '../recognition/face-gate';
 import { FaceRecognitionService } from '../recognition/face-recognition.service';
+import { DetectedFace } from '../recognition/recognition.types';
 import { VideoCaptureService } from '../recognition/video-capture.service';
 import {
   mergeStoredCredentials,
@@ -110,6 +116,14 @@ export class VideoFeedSourceService {
             ? existing.similarityThreshold
             : dto.similarityThreshold,
         recognitionFps: dto.recognitionFps ?? existing.recognitionFps,
+        minFaceSizePx:
+          dto.minFaceSizePx === undefined
+            ? existing.minFaceSizePx
+            : dto.minFaceSizePx,
+        minFaceQuality:
+          dto.minFaceQuality === undefined
+            ? existing.minFaceQuality
+            : dto.minFaceQuality,
       },
     });
     return this.serialize(updated);
@@ -172,7 +186,19 @@ export class VideoFeedSourceService {
       );
     }
 
-    const faces = this.faceDetection.detect(captureResult.frame);
+    // Detected the way the live pipeline does (scaled for the channel, no close-up fallback), so
+    // calibration sees the same faces; the embedding comes from the full frame, as it does live.
+    const scale = detectionScaleFor(resolveMinFaceSize(source.minFaceSizePx));
+    const detectionFrame =
+      scale < 1 ? captureResult.frame.rescale(scale) : captureResult.frame;
+    let faces: DetectedFace[];
+    try {
+      faces = this.faceDetection
+        .detect(detectionFrame, undefined, undefined, false)
+        .map((face) => unscaleFace(face, scale));
+    } finally {
+      if (detectionFrame !== captureResult.frame) detectionFrame.release();
+    }
     if (faces.length === 0) {
       throw new BadRequestException('No face detected in the captured frame.');
     }

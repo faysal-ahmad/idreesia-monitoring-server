@@ -16,6 +16,9 @@ export const UpdateVideoFeedSourceSchema = z.object({
   enabled: z.boolean().optional(),
   similarityThreshold: z.number().min(0).max(1).nullable().optional(),
   recognitionFps: z.number().min(0.1).max(30).optional(),
+  // null = the server default (face-gate.ts), 0 = no check.
+  minFaceSizePx: z.number().int().min(0).max(2000).nullable().optional(),
+  minFaceQuality: z.number().int().min(0).max(100).nullable().optional(),
 });
 export type UpdateVideoFeedSourceDto = z.infer<
   typeof UpdateVideoFeedSourceSchema

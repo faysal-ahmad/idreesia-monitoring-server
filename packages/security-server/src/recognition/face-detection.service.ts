@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import * as cv from '@u4/opencv4nodejs';
 import { applyDnnTarget } from './dnn-target';
+import { unscaleFace } from './face-gate';
 import { YUNET_MODEL_PATH } from './model-paths';
 import { DetectedFace } from './recognition.types';
 
@@ -39,20 +40,25 @@ export class FaceDetectionService implements OnModuleInit {
 
   // scoreThreshold: 0.6-0.9 is a moderately permissive default per the plan's quality-gate guidance
   // (stricter defaults are tuned for clean studio photos, not uncontrolled social-media enrollment photos).
+  // allowFallback: the downscaled retry below is for close-up profile photos only. Live camera
+  // frames pass false - their faces are never that large, and most frames have no face at all, so
+  // the retry would just run detection twice on every empty frame.
   detect(
     image: cv.Mat,
     scoreThreshold = 0.7,
     nmsThreshold = 0.3,
+    allowFallback = true,
   ): DetectedFace[] {
     const faces = this.detectAtFullSize(image, scoreThreshold, nmsThreshold);
     const longSide = Math.max(image.cols, image.rows);
-    if (faces.length > 0 || longSide <= FALLBACK_MAX_SIDE) return faces;
+    if (faces.length > 0 || !allowFallback || longSide <= FALLBACK_MAX_SIDE) {
+      return faces;
+    }
 
     // YuNet's largest anchor stride is 32px, so a face filling most of a high-resolution photo
     // (e.g. a ~1000px face in a 2000px close-up selfie) is far bigger than anything it can match
     // and goes undetected at full size. Retry on a downscaled copy and map the results back, so
-    // callers always get original-image coordinates. Only a fallback - downscaling up front would
-    // shrink small, distant faces in live camera frames below what YuNet can find.
+    // callers always get original-image coordinates.
     const scale = FALLBACK_MAX_SIDE / longSide;
     const resized = image.resize(
       Math.round(image.rows * scale),
@@ -60,19 +66,7 @@ export class FaceDetectionService implements OnModuleInit {
     );
     try {
       return this.detectAtFullSize(resized, scoreThreshold, nmsThreshold).map(
-        (face) => ({
-          box: {
-            x: face.box.x / scale,
-            y: face.box.y / scale,
-            width: face.box.width / scale,
-            height: face.box.height / scale,
-          },
-          confidence: face.confidence,
-          landmarks: face.landmarks.map(([x, y]): [number, number] => [
-            x / scale,
-            y / scale,
-          ]),
-        }),
+        (face) => unscaleFace(face, scale),
       );
     } finally {
       resized.release();

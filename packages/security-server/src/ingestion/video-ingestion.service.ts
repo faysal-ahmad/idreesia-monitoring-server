@@ -8,14 +8,16 @@ import { VideoFeedSource } from '@prisma/client';
 import * as cv from '@u4/opencv4nodejs';
 import { MediaServerService } from '../media-server/media-server.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  detectionScaleFor,
+  resolveMinFaceSize,
+} from '../recognition/face-gate';
 import { AlertPipelineService } from './alert-pipeline.service';
 import { UsageStatsService } from './usage-stats.service';
 
 // Frames are always read (to stay near-live and drain the stream buffer), but only handed off
 // downstream at the channel's recognitionFps, to cap CPU load. Paced by time rather than by
 // frame count so the rate doesn't depend on the camera's own frame rate.
-// Downscale factor applied to frames before handing them off downstream.
-const DOWNSCALE_FACTOR = 0.5;
 const MAX_CONSECUTIVE_FAILURES = 5;
 // Reconnects back off from 5s to 60s. After MAX_RECONNECT_ATTEMPTS in a row without a frame the
 // channel is disabled in the DB and its loop stops; re-enabling it in the UI starts it afresh.
@@ -298,19 +300,24 @@ export class VideoIngestionService implements OnModuleInit, OnModuleDestroy {
       if (due && !loop.processing) {
         loop.lastProcessedAt = now;
         this.stats.frameProcessed(loop.channel.id);
-        const downscaled = frame.rescale(DOWNSCALE_FACTOR);
-        // Free the full-resolution buffer now rather than leaving it to GC.
-        frame.release();
+        // Detection runs on a scaled-down copy (see detectionScaleFor); matching and the alert
+        // snapshot use the full frame, so it's kept until processing is done. loop.processing
+        // means only one frame per channel is ever held.
+        const scale = detectionScaleFor(
+          resolveMinFaceSize(loop.channel.minFaceSizePx),
+        );
+        const detectionFrame = scale < 1 ? frame.rescale(scale) : frame;
         loop.processing = true;
         this.alertPipeline
-          .processFrame(loop.channel, downscaled)
+          .processFrame(loop.channel, frame, detectionFrame, scale)
           .catch((error) =>
             this.logger.warn(
               `Channel "${loop.channel.name}": frame processing error: ${error}`,
             ),
           )
           .finally(() => {
-            downscaled.release();
+            if (detectionFrame !== frame) detectionFrame.release();
+            frame.release();
             loop.processing = false;
           });
       } else {

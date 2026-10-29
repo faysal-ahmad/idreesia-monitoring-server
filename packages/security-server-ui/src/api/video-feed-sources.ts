@@ -18,6 +18,8 @@ export interface UpdateVideoFeedSourceInput {
   enabled?: boolean;
   similarityThreshold?: number | null;
   recognitionFps?: number;
+  minFaceSizePx?: number | null;
+  minFaceQuality?: number | null;
 }
 
 // channelId (when editing) lets blank/redacted credentials fall back to the stored ones.

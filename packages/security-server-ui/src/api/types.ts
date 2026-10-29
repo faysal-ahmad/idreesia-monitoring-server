@@ -13,6 +13,9 @@ export interface VideoFeedSource {
   enabled: boolean;
   similarityThreshold: number | null;
   recognitionFps: number;
+  // null = the server default, 0 = no check.
+  minFaceSizePx: number | null;
+  minFaceQuality: number | null;
   createdAt: string;
   updatedAt: string;
   alertCount: number;
@@ -81,6 +84,9 @@ export interface Alert {
   imageFile: string;
   timestamp: string;
   similarityScore: number;
+  // The matched face's shorter side (native px) and quality; null on older alerts.
+  faceSizePx: number | null;
+  faceQuality: FaceQuality | null;
   profile: { id: string; name: string; isTest: boolean };
   channel: { id: string; name: string };
 }
@@ -165,7 +171,11 @@ export interface ChannelUsage {
   processedFps: number;
   busySkipPct: number;
   inferenceSharePct: number;
+  // Faces that passed the size and quality checks and were matched.
   faces: number;
+  skippedFaceSize: number;
+  skippedFaceQuality: number;
+  faceSkipPct: number;
   readFailures: number;
   reconnects: number;
 }

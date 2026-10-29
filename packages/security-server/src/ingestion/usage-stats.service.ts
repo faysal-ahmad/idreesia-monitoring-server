@@ -21,6 +21,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export type FrameSkipReason = 'fps' | 'busy';
 export type InferenceKind = 'detect' | 'embed';
+export type FaceSkipReason = 'size' | 'quality';
 
 interface ChannelWindow {
   frameWidth?: number;
@@ -31,6 +32,9 @@ interface ChannelWindow {
   skippedBusy: number;
   readFailures: number;
   reconnects: number;
+  // Detected faces skipped before matching (see face-gate.ts).
+  skippedFaceSize: number;
+  skippedFaceQuality: number;
   detectMs: number;
   detectCount: number;
   // One per embedded face, so embedCount is the face count.
@@ -52,6 +56,8 @@ function emptyWindow(): ChannelWindow {
     skippedBusy: 0,
     readFailures: 0,
     reconnects: 0,
+    skippedFaceSize: 0,
+    skippedFaceQuality: 0,
     detectMs: 0,
     detectCount: 0,
     embedMs: 0,
@@ -178,6 +184,13 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
     else window.skippedFps++;
   }
 
+  faceSkipped(channelId: string, reason: FaceSkipReason) {
+    const window = this.window(channelId);
+    if (!window) return;
+    if (reason === 'size') window.skippedFaceSize++;
+    else window.skippedFaceQuality++;
+  }
+
   readFailure(channelId: string) {
     const window = this.window(channelId);
     if (window) window.readFailures++;
@@ -278,6 +291,8 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
       readFailures: window.readFailures,
       reconnects: window.reconnects,
       faces: window.embedCount,
+      skippedFaceSize: window.skippedFaceSize,
+      skippedFaceQuality: window.skippedFaceQuality,
       inferenceMs: round(window.detectMs + window.embedMs),
       detectAvgMs: averageOrNull(window.detectMs, window.detectCount),
       embedAvgMs: averageOrNull(window.embedMs, window.embedCount),

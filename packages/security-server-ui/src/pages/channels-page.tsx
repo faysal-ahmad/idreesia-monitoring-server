@@ -77,6 +77,8 @@ export default function ChannelsPage() {
       input: ReturnType<typeof toApiInput> & {
         similarityThreshold: number | null;
         recognitionFps: number;
+        minFaceSizePx: number | null;
+        minFaceQuality: number | null;
       };
     }) => videoFeedSourcesApi.update(id, input),
     onSuccess: () => {
@@ -121,11 +123,13 @@ export default function ChannelsPage() {
     if (editingChannel) {
       updateMutation.mutate({
         id: editingChannel.id,
-        // A cleared threshold comes back as null, which resets the channel to the default.
+        // A cleared threshold or minimum comes back as null, which resets it to the default.
         input: {
           ...input,
           similarityThreshold: values.similarityThreshold ?? null,
           recognitionFps: values.recognitionFps!,
+          minFaceSizePx: values.minFaceSizePx ?? null,
+          minFaceQuality: values.minFaceQuality ?? null,
         },
       });
     } else {
@@ -223,6 +227,22 @@ export default function ChannelsPage() {
               dataIndex: 'similarityThreshold',
               render: (value: number | null) =>
                 value === null ? 'Default' : value.toFixed(2),
+            },
+            {
+              title: 'Min Face Size',
+              dataIndex: 'minFaceSizePx',
+              render: (value: number | null) =>
+                value === null
+                  ? 'Default'
+                  : value === 0
+                    ? 'Off'
+                    : `${value} px`,
+            },
+            {
+              title: 'Min Face Quality',
+              dataIndex: 'minFaceQuality',
+              render: (value: number | null) =>
+                value === null ? 'Default' : value === 0 ? 'Off' : value,
             },
             { title: 'Alerts', dataIndex: 'alertCount' },
             {

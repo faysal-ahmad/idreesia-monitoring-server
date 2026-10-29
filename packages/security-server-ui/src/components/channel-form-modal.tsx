@@ -25,6 +25,8 @@ export interface ChannelFormValues {
   password?: string;
   similarityThreshold?: number | null;
   recognitionFps?: number;
+  minFaceSizePx?: number | null;
+  minFaceQuality?: number | null;
 }
 
 const CONNECTION_FIELDS: (keyof ChannelFormValues)[] = [
@@ -84,6 +86,8 @@ export function ChannelFormModal({
         username: channel.config.username,
         similarityThreshold: channel.similarityThreshold,
         recognitionFps: channel.recognitionFps,
+        minFaceSizePx: channel.minFaceSizePx,
+        minFaceQuality: channel.minFaceQuality,
       });
     } else {
       form.resetFields();
@@ -234,6 +238,34 @@ export function ChannelFormModal({
                 min={0}
                 max={1}
                 step={0.01}
+                placeholder="Default"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+            <Form.Item
+              name="minFaceSizePx"
+              label="Min face size (px)"
+              extra="Faces smaller than this (in the camera's own pixels) are ignored. Lower catches people further away but uses more CPU. Leave blank for the default (96), or 0 to turn the check off."
+            >
+              <InputNumber
+                min={0}
+                max={2000}
+                step={8}
+                precision={0}
+                placeholder="Default"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+            <Form.Item
+              name="minFaceQuality"
+              label="Min face quality"
+              extra="Faces scoring below this (0-100: blur, angle, lighting, size) are ignored. Leave blank for the default (40), or 0 to turn the check off."
+            >
+              <InputNumber
+                min={0}
+                max={100}
+                step={5}
+                precision={0}
                 placeholder="Default"
                 style={{ width: '100%' }}
               />

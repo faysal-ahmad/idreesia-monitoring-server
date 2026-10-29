@@ -25,6 +25,13 @@ model VideoFeedSource {
   // How many frames per second are analyzed for faces. All frames are still read to keep the
   // stream near-live — this only limits how many reach recognition.
   recognitionFps      Float               @default(5)
+  // Detected faces smaller than this (shorter side, native pixels) are skipped before matching; it
+  // also sets how far frames are scaled down for detection (see face-gate.ts). null = the default,
+  // 0 = no check.
+  minFaceSizePx       Int?
+  // Detected faces scoring below this (FaceQualityService, 0-100) are skipped before matching.
+  // null = the default, 0 = no check.
+  minFaceQuality      Int?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   // Deleted, but kept until the ERP has been told (see ErpSyncService). Hidden everywhere else.
@@ -57,7 +64,11 @@ model ChannelStats {
   skippedBusy     Int
   readFailures    Int
   reconnects      Int
+  // Faces that passed the size and quality checks and were embedded for matching.
   faces           Int
+  // Detected faces skipped before matching as too small / too poor (see face-gate.ts).
+  skippedFaceSize    Int @default(0)
+  skippedFaceQuality Int @default(0)
   // Time spent in face detection and embedding for this channel. Divided by the window length it
   // is the channel's share of the inference lane (see ServerStats.inferenceBusyPct).
   inferenceMs     Float
@@ -160,11 +171,16 @@ model Alert {
   channelId           String
   // Deleting a channel with alert history is blocked (no cascade) to preserve the log.
   channel             VideoFeedSource   @relation(fields: [channelId], references: [id], onDelete: Restrict)
-  // File name (<uuid>.jpg) of the downscaled frame that triggered this alert — the visual
-  // evidence an admin reviews. The JPEG itself lives on disk under ALERT_IMAGES_DIR, not in the DB.
+  // File name (<uuid>.jpg) of the frame that triggered this alert (full resolution, long side capped
+  // at 1920px) — the visual evidence an admin reviews. The JPEG itself lives on disk under
+  // ALERT_IMAGES_DIR, not in the DB.
   imageFile           String
   // Cosine similarity between the detected face and the matched profile's embedding at alert time.
   similarityScore     Float
+  // The matched face's shorter side in native pixels, and its FaceQuality ({ score, signals,
+  // reasons }). Null on alerts raised before faces were checked.
+  faceSizePx          Int?
+  faceQuality         Json?
   // Delivery to the ERP (see ErpAlertPushService): PENDING until the ERP has stored it, so an
   // alert raised while the ERP is unreachable is sent once it's back.
   erpSyncStatus       ErpSyncStatus     @default(PENDING)

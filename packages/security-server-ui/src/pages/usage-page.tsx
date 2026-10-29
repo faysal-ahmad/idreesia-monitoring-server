@@ -253,9 +253,28 @@ export default function UsagePage() {
               render: (value: number) => `${value}%`,
             },
             {
-              title: 'Faces',
+              title: withTooltip(
+                'Faces',
+                'Faces that passed the channel’s size and quality checks and were matched against profiles.',
+              ),
               dataIndex: 'faces',
               sorter: (a: ChannelUsage, b: ChannelUsage) => a.faces - b.faces,
+            },
+            {
+              title: withTooltip(
+                'Faces Skipped',
+                'Share of detected faces ignored as too small or too poor to match (see the channel’s min face size and quality). Near 100% means the camera is too far away or the minimums are too strict.',
+              ),
+              dataIndex: 'faceSkipPct',
+              sorter: (a: ChannelUsage, b: ChannelUsage) =>
+                a.faceSkipPct - b.faceSkipPct,
+              render: (value: number, record: ChannelUsage) => (
+                <Tooltip
+                  title={`${record.skippedFaceSize} too small, ${record.skippedFaceQuality} too poor`}
+                >
+                  {value}%
+                </Tooltip>
+              ),
             },
             {
               title: withTooltip(
