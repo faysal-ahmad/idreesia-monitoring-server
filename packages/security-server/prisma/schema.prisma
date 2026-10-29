@@ -31,6 +31,71 @@ model VideoFeedSource {
   deletedAt           DateTime?
 
   alerts Alert[]
+  stats  ChannelStats[]
+
+  @@schema("security_server")
+}
+
+// The load one channel put on the server over one stats window (see UsageStatsService), for judging
+// which cameras are expensive. Kept for STATS_RETENTION_DAYS, then purged.
+model ChannelStats {
+  id              String          @id @default(cuid())
+  windowStart     DateTime
+  windowEnd       DateTime
+  channelId       String
+  // Stats aren't a record to preserve: deleting a channel drops its stats.
+  channel         VideoFeedSource @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  // Frame size as decoded (before downscaling). Decoding runs on the CPU and costs roughly
+  // framesRead x width x height, so this is the channel's share of the decode load.
+  frameWidth      Int?
+  frameHeight     Int?
+  framesRead      Int
+  framesProcessed Int
+  skippedFps      Int
+  // Due for recognition but dropped because the previous frame was still processing: the channel
+  // is getting fewer frames analysed than its recognitionFps asks for.
+  skippedBusy     Int
+  readFailures    Int
+  reconnects      Int
+  faces           Int
+  // Time spent in face detection and embedding for this channel. Divided by the window length it
+  // is the channel's share of the inference lane (see ServerStats.inferenceBusyPct).
+  inferenceMs     Float
+  // Null for a window in which no frame was processed (or no face embedded).
+  detectAvgMs     Float?
+  embedAvgMs      Float?
+
+  @@index([channelId, windowStart])
+  @@index([windowStart])
+  @@schema("security_server")
+}
+
+// Server-wide utilisation over one stats window (see UsageStatsService), for judging whether there is
+// room for more cameras. Kept for STATS_RETENTION_DAYS, then purged.
+model ServerStats {
+  id                String   @id @default(cuid())
+  windowStart       DateTime @unique
+  windowEnd         DateTime
+  // Channels that delivered at least one frame in the window.
+  activeChannels    Int
+  // OPENCV_DNN_TARGET during the window ('cuda' or 'cpu').
+  dnnTarget         String
+  // Share of the window spent in face detection and embedding, summed over all channels. These are
+  // synchronous native calls on the one Node thread, so this is the capacity that runs out first:
+  // near 100%, channels start piling up skippedBusy frames whatever the GPU's own utilisation.
+  inferenceBusyPct  Float
+  // From nvidia-smi, sampled every few seconds; null when no NVIDIA GPU is visible. Utilisation is
+  // the busiest GPU's, memory is summed across GPUs (one GPU in production).
+  gpuUtilAvgPct     Float?
+  gpuUtilMaxPct     Float?
+  gpuMemUsedMb      Int?
+  gpuMemTotalMb     Int?
+  // Server process CPU, in percent of one core (so 250 = 2.5 cores), mostly video decoding;
+  // cpuCores is how many the container has.
+  cpuPct            Float
+  cpuCores          Int
+  eventLoopLagP95Ms Float
+  eventLoopLagMaxMs Float
 
   @@schema("security_server")
 }
