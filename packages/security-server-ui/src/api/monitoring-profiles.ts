@@ -15,6 +15,10 @@ export interface UpdateMonitoringProfileInput {
   isTest?: boolean;
 }
 
+// An <img> URL, not a fetch: the browser sends the admin session cookie with it.
+export const profileThumbnailUrl = (profileId: string, imageId: string) =>
+  `/api/monitoring-profiles/${profileId}/images/${imageId}/thumbnail`;
+
 export const monitoringProfilesApi = {
   list: () => api.get<MonitoringProfileSummary[]>('/monitoring-profiles'),
   get: (id: string) =>
@@ -33,10 +37,8 @@ export const monitoringProfilesApi = {
       formData,
     );
   },
+  setDefaultImage: (id: string, imageId: string) =>
+    api.post<void>(`/monitoring-profiles/${id}/images/${imageId}/default`),
   removeImage: (id: string, imageId: string) =>
     api.delete<void>(`/monitoring-profiles/${id}/images/${imageId}`),
-  recalculateQuality: (id: string) =>
-    api.post<{ recalculated: number; notRated: number }>(
-      `/monitoring-profiles/${id}/images/recalculate-quality`,
-    ),
 };

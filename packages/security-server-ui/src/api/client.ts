@@ -13,10 +13,19 @@ export class ApiError extends Error {
 // made here — it expects the UI to say when something it needs to reload has changed. Rather than
 // remembering to call /system/reload from every mutation's call site, every non-GET request to a
 // reload-relevant path triggers it here, once, right after the mutation succeeds. (Changes from
-// the ERP sync reload on the server by themselves.)
+// the ERP sync reload on the server by themselves.) The reload isn't awaited: it restarts channel
+// loops and refreshes the match cache, which can take many seconds, and the change is already
+// saved - so the caller (e.g. a modal waiting to close) shouldn't wait for it to take effect.
 function isReloadRelevant(method: string, path: string): boolean {
   if (method === 'GET' || path === '/system/reload') return false;
-  if (path.endsWith('/verify') || path.endsWith('/test-match')) return false;
+  if (
+    path.endsWith('/verify') ||
+    path.endsWith('/test-match') ||
+    path.endsWith('/analyze-frame') ||
+    path.endsWith('/default')
+  ) {
+    return false;
+  }
   return (
     path.startsWith('/video-feed-sources') ||
     path.startsWith('/monitoring-profiles') ||
@@ -47,7 +56,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (response.status === 204) {
-    if (response.ok && isReloadRelevant(method, path)) await triggerReload();
+    if (response.ok && isReloadRelevant(method, path)) void triggerReload();
     return undefined as T;
   }
 
@@ -65,7 +74,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     );
   }
 
-  if (isReloadRelevant(method, path)) await triggerReload();
+  if (isReloadRelevant(method, path)) void triggerReload();
 
   return body as T;
 }

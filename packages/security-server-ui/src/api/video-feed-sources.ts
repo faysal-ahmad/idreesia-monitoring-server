@@ -1,5 +1,6 @@
 import { api } from './client';
 import {
+  FrameAnalysis,
   RtspConfig,
   TestMatchResult,
   VerifyResult,
@@ -18,6 +19,8 @@ export interface UpdateVideoFeedSourceInput {
   enabled?: boolean;
   similarityThreshold?: number | null;
   recognitionFps?: number;
+  minFaceSizePx?: number | null;
+  minFaceQuality?: number | null;
 }
 
 // channelId (when editing) lets blank/redacted credentials fall back to the stored ones.
@@ -38,4 +41,12 @@ export const videoFeedSourcesApi = {
     api.post<VerifyResult>('/video-feed-sources/verify', input),
   testMatch: (id: string) =>
     api.post<TestMatchResult>(`/video-feed-sources/${id}/test-match`),
+  analyzeFrame: (id: string, frame: Blob) => {
+    const formData = new FormData();
+    formData.append('file', frame, 'frame.jpg');
+    return api.postForm<FrameAnalysis>(
+      `/video-feed-sources/${id}/analyze-frame`,
+      formData,
+    );
+  },
 };

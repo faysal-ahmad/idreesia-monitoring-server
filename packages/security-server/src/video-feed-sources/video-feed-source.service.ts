@@ -5,11 +5,21 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, VideoFeedSource } from '@prisma/client';
+import * as cv from '@u4/opencv4nodejs';
 import { parsePgVector } from '../common/pgvector.util';
 import { MediaServerService } from '../media-server/media-server.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaceDetectionService } from '../recognition/face-detection.service';
+import {
+  detectionScaleFor,
+  faceSizePx,
+  resolveMinFaceQuality,
+  resolveMinFaceSize,
+  unscaleFace,
+} from '../recognition/face-gate';
+import { FaceQualityService } from '../recognition/face-quality.service';
 import { FaceRecognitionService } from '../recognition/face-recognition.service';
+import { DetectedFace } from '../recognition/recognition.types';
 import { VideoCaptureService } from '../recognition/video-capture.service';
 import {
   mergeStoredCredentials,
@@ -40,6 +50,7 @@ export class VideoFeedSourceService {
     private readonly videoCapture: VideoCaptureService,
     private readonly faceDetection: FaceDetectionService,
     private readonly faceRecognition: FaceRecognitionService,
+    private readonly faceQuality: FaceQualityService,
     private readonly mediaServer: MediaServerService,
   ) {}
 
@@ -110,6 +121,14 @@ export class VideoFeedSourceService {
             ? existing.similarityThreshold
             : dto.similarityThreshold,
         recognitionFps: dto.recognitionFps ?? existing.recognitionFps,
+        minFaceSizePx:
+          dto.minFaceSizePx === undefined
+            ? existing.minFaceSizePx
+            : dto.minFaceSizePx,
+        minFaceQuality:
+          dto.minFaceQuality === undefined
+            ? existing.minFaceQuality
+            : dto.minFaceQuality,
       },
     });
     return this.serialize(updated);
@@ -157,6 +176,62 @@ export class VideoFeedSourceService {
       : { reachable: false, error: result.error };
   }
 
+  // Detected the way the live pipeline does (scaled for the channel, no close-up fallback), so
+  // calibration sees the same faces, in the frame's own coordinates.
+  private detectAsLive(frame: cv.Mat, source: VideoFeedSource): DetectedFace[] {
+    const scale = detectionScaleFor(resolveMinFaceSize(source.minFaceSizePx));
+    const detectionFrame = scale < 1 ? frame.rescale(scale) : frame;
+    try {
+      return this.faceDetection
+        .detect(detectionFrame, undefined, undefined, false)
+        .map((face) => unscaleFace(face, scale));
+    } finally {
+      if (detectionFrame !== frame) detectionFrame.release();
+    }
+  }
+
+  // Rates every face in a frame captured from the live view, so an admin can see the size and
+  // quality the pipeline measures for each one. Boxes are YuNet's own (unpadded), in image pixels.
+  async analyzeFrame(id: string, image: Buffer) {
+    const source = await this.findRaw(id);
+    let frame: cv.Mat;
+    try {
+      frame = cv.imdecode(image);
+    } catch {
+      throw new BadRequestException('The captured frame could not be read.');
+    }
+    if (frame.empty) {
+      throw new BadRequestException('The captured frame could not be read.');
+    }
+
+    try {
+      const faces = this.detectAsLive(frame, source).map((face) => {
+        const aligned = this.faceRecognition.align(frame, face.landmarks);
+        try {
+          const quality = this.faceQuality.assess(face, aligned);
+          return {
+            box: face.box,
+            confidence: face.confidence,
+            sizePx: faceSizePx(face),
+            quality: quality.score,
+            qualityReasons: quality.reasons,
+          };
+        } finally {
+          aligned.release();
+        }
+      });
+      return {
+        width: frame.cols,
+        height: frame.rows,
+        minFaceSizePx: resolveMinFaceSize(source.minFaceSizePx),
+        minFaceQuality: resolveMinFaceQuality(source.minFaceQuality),
+        faces,
+      };
+    } finally {
+      frame.release();
+    }
+  }
+
   async testMatch(id: string) {
     const source = await this.findRaw(id);
     // An enabled channel is read through its go2rtc re-stream, so test-matching doesn't open an
@@ -172,7 +247,8 @@ export class VideoFeedSourceService {
       );
     }
 
-    const faces = this.faceDetection.detect(captureResult.frame);
+    // The embedding comes from the full frame, as it does live.
+    const faces = this.detectAsLive(captureResult.frame, source);
     if (faces.length === 0) {
       throw new BadRequestException('No face detected in the captured frame.');
     }

@@ -38,7 +38,12 @@ export function AlertImagesModal({ alert, onClose }: AlertImagesModalProps) {
               {alert.channel.name} ·{' '}
               {new Date(alert.timestamp).toLocaleString()} ·{' '}
               {Math.round(alert.similarityScore * 100)}% confidence
+              {alert.faceSizePx !== null && ` · face ${alert.faceSizePx}px`}
+              {alert.faceQuality && ` · quality ${alert.faceQuality.score}%`}
             </Text>
+            {!!alert.faceQuality?.reasons.length && (
+              <Text type="warning">{alert.faceQuality.reasons.join(', ')}</Text>
+            )}
             <Image
               src={`/api/alert-images/${alert.imageFile}`}
               preview={false}
