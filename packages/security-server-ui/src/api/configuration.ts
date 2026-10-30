@@ -3,7 +3,13 @@ import { Configuration } from './types';
 
 export interface UpdateConfigurationInput {
   alertsRetentionDays?: number;
+  usageStatsIntervalSeconds?: number;
+  usageStatsRetentionDays?: number;
   includeTestProfilesInAlerts?: boolean;
+  erpUrl?: string;
+  erpUsername?: string;
+  // Blank keeps the stored password.
+  erpPassword?: string;
   erpSyncIntervalMinutes?: number;
   erpAlertRetryIntervalMinutes?: number;
 }

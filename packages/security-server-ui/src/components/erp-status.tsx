@@ -20,15 +20,7 @@ const formatTime = (value: string | null) =>
 // Shown under the ERP Sync Interval setting.
 export function ErpSyncStatus() {
   const { data: status } = useErpStatus();
-  if (!status) return null;
-  if (!status.configured) {
-    return (
-      <Text type="warning" style={{ display: 'block' }}>
-        The ERP connection isn't configured. Set ERP_URL, ERP_USERNAME and
-        ERP_PASSWORD for the server.
-      </Text>
-    );
-  }
+  if (!status?.configured) return null;
   return (
     <>
       <Text style={{ display: 'block' }}>
@@ -55,6 +47,25 @@ export function ErpAlertDeliveryStatus() {
       {status.lastPushError && (
         <Text type="danger" style={{ display: 'block' }}>
           Last attempt failed: {status.lastPushError}
+        </Text>
+      )}
+    </>
+  );
+}
+
+// Shown under the Usage Stats Retention setting.
+export function ErpUsageStatsDeliveryStatus() {
+  const { data: status } = useErpStatus();
+  if (!status?.configured) return null;
+  return (
+    <>
+      <Text style={{ display: 'block' }}>
+        Usage stats sent to the ERP up to:{' '}
+        {formatTime(status.usageStatsPushedUntil)}
+      </Text>
+      {status.lastUsageStatsPushError && (
+        <Text type="danger" style={{ display: 'block' }}>
+          Last attempt failed: {status.lastUsageStatsPushError}
         </Text>
       )}
     </>

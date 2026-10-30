@@ -59,9 +59,11 @@ export class ErpAlertPushService implements OnModuleInit, OnModuleDestroy {
     private readonly scheduler: SchedulerRegistry,
   ) {}
 
+  // Set up whether or not the ERP connection is configured yet: it can be set on the Configuration
+  // page at any time, and every run checks it first.
   async onModuleInit() {
-    if (!this.client.configured) return;
     this.subscriptions.push(
+      this.client.connectionChanges$.subscribe(() => void this.pushPending()),
       this.events.events$
         .pipe(filter((event) => event.type === 'created'))
         .subscribe(() => void this.pushPending()),
@@ -115,7 +117,7 @@ export class ErpAlertPushService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async run() {
-    if (!this.client.configured) return;
+    if (!(await this.client.isConfigured())) return;
 
     const pending = await this.prisma.alert.findMany({
       where: { erpSyncStatus: 'PENDING' },

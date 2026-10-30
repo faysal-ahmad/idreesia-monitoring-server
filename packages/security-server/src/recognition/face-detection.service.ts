@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import * as cv from '@u4/opencv4nodejs';
-import { applyDnnTarget } from './dnn-target';
+import { applyDnnTarget, warmUpDnn } from './dnn-target';
 import { unscaleFace } from './face-gate';
 import { YUNET_MODEL_PATH } from './model-paths';
 import { DetectedFace } from './recognition.types';
@@ -63,6 +63,17 @@ export class FaceDetectionService implements OnModuleInit {
 
   onModuleInit() {
     this.photoNet = this.loadNet();
+    // Through the photo net, so no dummy shape takes a slot among the live nets. The CUDA context
+    // and compiled kernels are shared by every net in the process; a live net's first frame still
+    // sets up its own descriptors and buffers, roughly the ~100 ms a shape change used to cost.
+    warmUpDnn('YuNet', () => {
+      const blank = new cv.Mat(320, 320, cv.CV_8UC3, [0, 0, 0]);
+      try {
+        this.detect(blank);
+      } finally {
+        blank.release();
+      }
+    });
   }
 
   private loadNet(): cv.Net {

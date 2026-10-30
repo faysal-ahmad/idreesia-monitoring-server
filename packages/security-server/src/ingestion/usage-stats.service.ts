@@ -8,6 +8,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { execFile } from 'child_process';
 import { availableParallelism } from 'os';
 import { IntervalHistogram, monitorEventLoopDelay } from 'perf_hooks';
+import { Subscription } from 'rxjs';
+import { ConfigurationService } from '../configuration/configuration.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChannelWindow } from './channel-stats-recorder';
 import { IngestionProcessPoolService } from './ingestion-process-pool.service';
@@ -16,9 +18,7 @@ import { IngestionProcessPoolService } from './ingestion-process-pool.service';
 // more cameras. Once per window it writes one ServerStats row (GPU, CPU, inference lanes) and one
 // ChannelStats row per channel with any activity. The per-channel counters are kept by the
 // ingestion processes (ChannelStatsRecorder) and collected here once per window, so the DB is
-// touched once per window.
-const DEFAULT_INTERVAL_SECONDS = 60;
-const DEFAULT_RETENTION_DAYS = 7;
+// touched once per window. The window length is the usageStatsIntervalSeconds setting.
 const GPU_SAMPLE_MS = 5_000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -34,13 +34,6 @@ function round(value: number): number {
 
 function averageOrNull(total: number, count: number): number | null {
   return count === 0 ? null : round(total / count);
-}
-
-// Unset, empty or invalid falls back to the default.
-function nonNegativeNumberFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  const value = Number(raw);
-  return raw && value >= 0 ? value : fallback;
 }
 
 // A channel only ever runs in one ingestion process, but sum rather than overwrite in case one was
@@ -97,14 +90,10 @@ function sampleGpu(): Promise<GpuSample | null> {
 export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(UsageStatsService.name);
   // 0 disables stats collection entirely.
-  private readonly intervalSeconds = nonNegativeNumberFromEnv(
-    'STATS_INTERVAL_SECONDS',
-    DEFAULT_INTERVAL_SECONDS,
-  );
-  private readonly retentionDays = nonNegativeNumberFromEnv(
-    'STATS_RETENTION_DAYS',
-    DEFAULT_RETENTION_DAYS,
-  );
+  private intervalSeconds = 0;
+  // Interval changes are applied one at a time, each closing the window the previous one opened.
+  private applying: Promise<void> = Promise.resolve();
+  private subscription?: Subscription;
   private readonly dnnTarget =
     process.env.OPENCV_DNN_TARGET === 'cuda' ? 'cuda' : 'cpu';
   private gpuSamples: GpuSample[] = [];
@@ -119,14 +108,48 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pool: IngestionProcessPoolService,
+    private readonly configuration: ConfigurationService,
   ) {}
 
-  onModuleInit() {
-    if (!this.enabled) return;
+  async onModuleInit() {
+    this.subscription = this.configuration.changes$.subscribe(
+      ({ usageStatsIntervalSeconds }) =>
+        void this.setInterval(usageStatsIntervalSeconds),
+    );
+    await this.setInterval(
+      (await this.configuration.getAll()).usageStatsIntervalSeconds,
+    );
+  }
+
+  async onModuleDestroy() {
+    this.subscription?.unsubscribe();
+    await this.setInterval(0);
+  }
+
+  private setInterval(seconds: number): Promise<void> {
+    this.applying = this.applying.then(async () => {
+      if (seconds === this.intervalSeconds) return;
+      if (this.enabled) await this.stop();
+      this.intervalSeconds = seconds;
+      if (this.enabled) await this.start();
+      this.logger.log(
+        this.enabled
+          ? `Usage stats every ${seconds}s`
+          : 'Usage stats collection off',
+      );
+    });
+    return this.applying;
+  }
+
+  private async start() {
+    // Drop what the ingestion processes counted while collection was off, so the first window
+    // only covers its own time.
+    await this.pool.collectStats();
     this.eventLoopDelay = monitorEventLoopDelay();
     this.eventLoopDelay.enable();
     this.windowStart = new Date();
     this.cpuAtWindowStart = process.cpuUsage();
+    this.gpuSamples = [];
     this.flushTimer = setInterval(
       () => void this.flush(),
       this.intervalSeconds * 1000,
@@ -140,22 +163,23 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
     void this.recordGpuSample();
   }
 
-  async onModuleDestroy() {
-    if (!this.enabled) return;
+  // Closes the current window, so a shorter last window is still recorded.
+  private async stop() {
     clearInterval(this.flushTimer);
     clearInterval(this.gpuTimer);
     await this.flush();
     this.eventLoopDelay?.disable();
+    this.eventLoopDelay = undefined;
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async purgeExpiredStats() {
-    const where = {
-      windowStart: {
-        lt: new Date(Date.now() - this.retentionDays * MS_PER_DAY),
-      },
-    };
     try {
+      const { usageStatsRetentionDays: retentionDays } =
+        await this.configuration.getAll();
+      const where = {
+        windowStart: { lt: new Date(Date.now() - retentionDays * MS_PER_DAY) },
+      };
       const [channelRows, serverRows] = await this.prisma.$transaction([
         this.prisma.channelStats.deleteMany({ where }),
         this.prisma.serverStats.deleteMany({ where }),
@@ -163,7 +187,7 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
       const count = channelRows.count + serverRows.count;
       if (count > 0) {
         this.logger.log(
-          `Purged ${count} stats row(s) older than ${this.retentionDays} day(s)`,
+          `Purged ${count} stats row(s) older than ${retentionDays} day(s)`,
         );
       }
     } catch (error) {

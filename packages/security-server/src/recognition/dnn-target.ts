@@ -14,3 +14,15 @@ export function applyDnnTarget(net: cv.Net, modelName: string): void {
   net.setPreferableTarget(cv.DNN_TARGET_CUDA);
   logger.log(`${modelName} set to run on CUDA`);
 }
+
+// On CUDA a net's first forward pass sets up the CUDA context, cuDNN and the kernels (JIT-compiled
+// from PTX on GPUs newer than the image was built for), which took 3-6 s in production. Left to the
+// first live face, that blocks the whole process and stalls every channel it reads. Running one
+// dummy pass at startup moves the cost there. On the CPU there's nothing to warm up.
+export function warmUpDnn(modelName: string, forward: () => void): void {
+  if (process.env.OPENCV_DNN_TARGET !== 'cuda') return;
+
+  const start = Date.now();
+  forward();
+  logger.log(`${modelName} warmed up in ${Date.now() - start} ms`);
+}

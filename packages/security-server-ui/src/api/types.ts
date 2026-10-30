@@ -126,7 +126,13 @@ export interface AlertFilterOptions {
 
 export interface Configuration {
   alertsRetentionDays: number;
+  usageStatsIntervalSeconds: number;
+  usageStatsRetentionDays: number;
   includeTestProfilesInAlerts: boolean;
+  erpUrl: string;
+  erpUsername: string;
+  // The password itself is never sent to the UI.
+  hasErpPassword: boolean;
   erpSyncIntervalMinutes: number;
   erpAlertRetryIntervalMinutes: number;
 }
@@ -145,12 +151,15 @@ export interface ChannelHealth {
 }
 
 export interface ErpStatus {
-  // false when ERP_URL / ERP_USERNAME / ERP_PASSWORD aren't set on the server.
+  // false until the ERP URL, username and password are set on the Configuration page.
   configured: boolean;
   lastSyncedAt: string | null;
   lastSyncError: string | null;
   pendingAlerts: number;
   lastPushError: string | null;
+  // End of the last 5-minute usage-stats bucket the ERP has received.
+  usageStatsPushedUntil: string | null;
+  lastUsageStatsPushError: string | null;
 }
 
 export interface ErpSyncSummary {
@@ -205,7 +214,7 @@ export interface ChannelUsage {
 
 export interface UsageStatsSummary {
   minutes: number;
-  // false when STATS_INTERVAL_SECONDS=0 on the server.
+  // false when the Usage Stats Interval setting is 0.
   statsEnabled: boolean;
   coveredSeconds: number;
   server: ServerUsage | null;
