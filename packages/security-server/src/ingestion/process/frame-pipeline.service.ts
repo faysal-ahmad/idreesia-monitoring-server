@@ -21,9 +21,9 @@ import { ParentChannel } from './parent-channel';
 import { ProcessMatchCache } from './process-match-cache';
 
 // Without this, one person standing in front of a camera for a few seconds would insert
-// dozens of near-duplicate Alert rows (one per processed frame) for the same detection event —
-// not called out explicitly in the plan, but needed for the Alerts page to stay a usable log
-// rather than a flood of duplicates from a single physical event. Keyed by channel, and a channel
+// dozens of near-duplicate Alert rows (one per processed frame) for the same detection event; this
+// keeps the Alerts page a usable log rather than a flood of duplicates from a single physical
+// event. Keyed by channel, and a channel
 // is only ever read by one ingestion process, so keeping it per process is enough.
 const ALERT_COOLDOWN_MS = 60_000;
 

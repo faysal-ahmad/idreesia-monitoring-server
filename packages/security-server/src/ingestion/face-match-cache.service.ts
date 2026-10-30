@@ -8,9 +8,9 @@ import { IngestionProcessPoolService } from './ingestion-process-pool.service';
 // monitoring profile, its images, or the configuration change (via /system/reload), then sent to
 // every ingestion process, which matches against its own copy (process/process-match-cache.ts).
 // Test profiles are left out unless the includeTestProfilesInAlerts setting is on, since they
-// are normally calibration-only. Matching stays in-memory — see the plan's "Matching stays
-// in-memory" rationale for when this would need to move to pgvector instead (tens of thousands of
-// embeddings, not the <50-profile scale this is scoped to).
+// are normally calibration-only. Matching stays in-memory — see docs/face-recognition.md for when
+// this would need to move to pgvector instead (tens of thousands of embeddings, not the
+// <50-profile scale this is scoped to).
 @Injectable()
 export class FaceMatchCacheService implements OnModuleInit {
   private readonly logger = new Logger(FaceMatchCacheService.name);

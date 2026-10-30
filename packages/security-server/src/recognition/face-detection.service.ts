@@ -88,8 +88,8 @@ export class FaceDetectionService implements OnModuleInit {
     return net;
   }
 
-  // scoreThreshold: 0.6-0.9 is a moderately permissive default per the plan's quality-gate guidance
-  // (stricter defaults are tuned for clean studio photos, not uncontrolled social-media enrollment photos).
+  // scoreThreshold: 0.6-0.9 is a moderately permissive range for enrollment (see docs/face-recognition.md);
+  // stricter defaults are tuned for clean studio photos, not uncontrolled social-media enrollment photos.
   // allowFallback: the downscaled retry below is for close-up profile photos only. Live camera
   // frames pass false - their faces are never that large, and most frames have no face at all, so
   // the retry would just run detection twice on every empty frame.
