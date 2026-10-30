@@ -26,16 +26,57 @@ const OUTPUT_NAMES = [
   'kps_32',
 ];
 
+// Most live-frame input shapes kept loaded at once (see netForShape). There's one shape per
+// distinct camera resolution and min face size, so this is well above any real deployment.
+const MAX_LIVE_NETS = 16;
+
+// A Mat's elements as float32s (YuNet's outputs are CV_32F). getData() copies into a fresh Buffer,
+// which Node may place at an offset in its shared pool; Float32Array needs that offset 4-aligned.
+function floatData(mat: cv.Mat): Float32Array {
+  const data = mat.getData();
+  return data.byteOffset % 4 === 0
+    ? new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4)
+    : new Float32Array(new Uint8Array(data).buffer);
+}
+
 // Ported from OpenCV's FaceDetectorYNImpl::postProcess (modules/objdetect/src/face_detect.cpp) —
 // this Node binding (@u4/opencv4nodejs) doesn't wrap FaceDetectorYN, only the generic cv.dnn
 // module, so YuNet's anchor-based raw output has to be decoded by hand exactly as the C++ does.
 @Injectable()
 export class FaceDetectionService implements OnModuleInit {
-  private net!: cv.Net;
+  // Profile photos come in every size, so they share one net that re-sizes itself as needed.
+  private photoNet!: cv.Net;
+  // Live frames get one net per input shape. Giving an OpenCV DNN net an input of a different shape
+  // makes it set itself up again (on CUDA: cuDNN descriptors and buffers), which costs far more than
+  // the inference itself; with cameras of different resolutions sharing one net, that happened on
+  // nearly every frame. Map order is least recently used first.
+  private readonly liveNets = new Map<string, cv.Net>();
 
   onModuleInit() {
-    this.net = cv.readNetFromONNX(YUNET_MODEL_PATH);
-    applyDnnTarget(this.net, 'YuNet');
+    this.photoNet = this.loadNet();
+  }
+
+  private loadNet(): cv.Net {
+    const net = cv.readNetFromONNX(YUNET_MODEL_PATH);
+    applyDnnTarget(net, 'YuNet');
+    return net;
+  }
+
+  private netForShape(width: number, height: number): cv.Net {
+    const key = `${width}x${height}`;
+    let net = this.liveNets.get(key);
+    if (net) {
+      this.liveNets.delete(key);
+    } else {
+      net = this.loadNet();
+      if (this.liveNets.size >= MAX_LIVE_NETS) {
+        // The binding has no explicit release for a Net; dropping it leaves it to the GC.
+        const oldest = this.liveNets.keys().next().value as string;
+        this.liveNets.delete(oldest);
+      }
+    }
+    this.liveNets.set(key, net);
+    return net;
   }
 
   // scoreThreshold: 0.6-0.9 is a moderately permissive default per the plan's quality-gate guidance
@@ -49,7 +90,14 @@ export class FaceDetectionService implements OnModuleInit {
     nmsThreshold = 0.3,
     allowFallback = true,
   ): DetectedFace[] {
-    const faces = this.detectAtFullSize(image, scoreThreshold, nmsThreshold);
+    // allowFallback is only ever set for profile photos, so it doubles as the live/photo split.
+    const live = !allowFallback;
+    const faces = this.detectAtFullSize(
+      image,
+      scoreThreshold,
+      nmsThreshold,
+      live,
+    );
     const longSide = Math.max(image.cols, image.rows);
     if (faces.length > 0 || !allowFallback || longSide <= FALLBACK_MAX_SIDE) {
       return faces;
@@ -65,9 +113,12 @@ export class FaceDetectionService implements OnModuleInit {
       Math.round(image.cols * scale),
     );
     try {
-      return this.detectAtFullSize(resized, scoreThreshold, nmsThreshold).map(
-        (face) => unscaleFace(face, scale),
-      );
+      return this.detectAtFullSize(
+        resized,
+        scoreThreshold,
+        nmsThreshold,
+        live,
+      ).map((face) => unscaleFace(face, scale));
     } finally {
       resized.release();
     }
@@ -81,6 +132,7 @@ export class FaceDetectionService implements OnModuleInit {
     image: cv.Mat,
     scoreThreshold: number,
     nmsThreshold: number,
+    live: boolean,
   ): DetectedFace[] {
     const inputW = image.cols;
     const inputH = image.rows;
@@ -98,8 +150,9 @@ export class FaceDetectionService implements OnModuleInit {
     const blob = cv.blobFromImage(padded);
     padded.release();
 
-    this.net.setInput(blob);
-    const outputs = this.net.forward(OUTPUT_NAMES);
+    const net = live ? this.netForShape(padW, padH) : this.photoNet;
+    net.setInput(blob);
+    const outputs = net.forward(OUTPUT_NAMES);
     blob.release();
 
     const cls = outputs.slice(0, 3);
@@ -145,44 +198,36 @@ export class FaceDetectionService implements OnModuleInit {
       const cols = Math.floor(padW / stride);
       const rows = Math.floor(padH / stride);
 
-      // getDataAsArray() has both a number[][] and number[][][] overload with identical
-      // (empty) parameter lists, so TS always infers the first — these Mats are actually
-      // 3D at runtime (confirmed via smoke test), hence the unknown bridge.
-      const clsData = cls[
-        strideIdx
-      ].getDataAsArray() as unknown as number[][][];
-      const objData = obj[
-        strideIdx
-      ].getDataAsArray() as unknown as number[][][];
-      const bboxData = bbox[
-        strideIdx
-      ].getDataAsArray() as unknown as number[][][];
-      const kpsData = kps[
-        strideIdx
-      ].getDataAsArray() as unknown as number[][][];
+      // The outputs are [1, anchors, 1|4|10] float Mats, read as flat arrays: anchor idx's values
+      // start at idx * 1|4|10. Only the anchors that pass the score threshold - a handful out of
+      // thousands - have their box and landmarks read.
+      const clsData = floatData(cls[strideIdx]);
+      const objData = floatData(obj[strideIdx]);
+      const bboxData = floatData(bbox[strideIdx]);
+      const kpsData = floatData(kps[strideIdx]);
 
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           const idx = r * cols + c;
-          const clsScore = Math.min(Math.max(clsData[0][idx][0], 0), 1);
-          const objScore = Math.min(Math.max(objData[0][idx][0], 0), 1);
+          const clsScore = Math.min(Math.max(clsData[idx], 0), 1);
+          const objScore = Math.min(Math.max(objData[idx], 0), 1);
           const score = Math.sqrt(clsScore * objScore);
           if (score < scoreThreshold) continue;
 
-          const bboxRow = bboxData[0][idx];
-          const cx = (c + bboxRow[0]) * stride;
-          const cy = (r + bboxRow[1]) * stride;
-          const w = Math.exp(bboxRow[2]) * stride;
-          const h = Math.exp(bboxRow[3]) * stride;
+          const b = idx * 4;
+          const cx = (c + bboxData[b]) * stride;
+          const cy = (r + bboxData[b + 1]) * stride;
+          const w = Math.exp(bboxData[b + 2]) * stride;
+          const h = Math.exp(bboxData[b + 3]) * stride;
           const x1 = cx - w / 2;
           const y1 = cy - h / 2;
 
-          const kpsRow = kpsData[0][idx];
+          const k = idx * 10;
           const landmarks: [number, number][] = [];
           for (let n = 0; n < 5; n++) {
             landmarks.push([
-              (kpsRow[2 * n] + c) * stride,
-              (kpsRow[2 * n + 1] + r) * stride,
+              (kpsData[k + 2 * n] + c) * stride,
+              (kpsData[k + 2 * n + 1] + r) * stride,
             ]);
           }
 
