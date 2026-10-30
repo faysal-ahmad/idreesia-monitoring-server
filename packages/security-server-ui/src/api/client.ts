@@ -20,7 +20,6 @@ function isReloadRelevant(method: string, path: string): boolean {
   if (method === 'GET' || path === '/system/reload') return false;
   if (
     path.endsWith('/verify') ||
-    path.endsWith('/test-match') ||
     path.endsWith('/analyze-frame') ||
     path.endsWith('/default')
   ) {

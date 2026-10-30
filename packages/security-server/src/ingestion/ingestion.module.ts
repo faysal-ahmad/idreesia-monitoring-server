@@ -6,6 +6,7 @@ import { RecognitionModule } from '../recognition/recognition.module';
 import { AlertPipelineService } from './alert-pipeline.service';
 import { ChannelHealthController } from './channel-health.controller';
 import { FaceMatchCacheService } from './face-match-cache.service';
+import { IngestionProcessPoolService } from './ingestion-process-pool.service';
 import { UsageStatsController } from './usage-stats.controller';
 import { UsageStatsQueryService } from './usage-stats-query.service';
 import { UsageStatsService } from './usage-stats.service';
@@ -23,6 +24,7 @@ import { VideoIngestionService } from './video-ingestion.service';
     VideoIngestionService,
     AlertPipelineService,
     FaceMatchCacheService,
+    IngestionProcessPoolService,
     UsageStatsService,
     UsageStatsQueryService,
   ],
