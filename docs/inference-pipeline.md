@@ -141,6 +141,7 @@ Without a GPU, YuNet and SFace run on the CPU: in production, 9 channels at 2 fp
 
 - **Architecture.** The RTX 5060 Ti is Blackwell (compute capability 12.0). The image compiles kernels ahead of time for 6.1, 7.5, 8.6 and 8.9 and includes 8.9 PTX, so on the 5060 Ti the kernels are JIT-compiled from PTX at startup. This loads and runs in production, but it hasn't been compared against a native `12.0` build, which needs CUDA 12.8 or later.
 - **Silent fallback.** If CUDA can't be used, OpenCV logs a warning and falls back to the CPU, per net or even per layer. The startup log line states the backend that was _requested_, not the one in use. Check that GPU memory is in use (about 380 MB per process), and compare detection times on the usage page.
+- **Warm-up.** A net's first CUDA forward pass sets up the context, cuDNN and the PTX-compiled kernels, which took 3–6 s and blocked the whole process (and every channel in it) on its first face. Both services run one dummy pass at startup (`warmUpDnn` in `recognition/dnn-target.ts`) and log "… warmed up in N ms". YuNet is warmed through the photo net; each live net's first frame still costs about 100 ms to set up its shape.
 - **Startup warning.** OpenCV 4.10 logs a harmless cuDNN version-check warning ("90.5 vs 9.5") at startup.
 - **One CUDA context per process.** The main process and every ingestion process each load the models, so each holds its own CUDA context and copies of the nets on the GPU.
 
@@ -148,16 +149,16 @@ Without a GPU, YuNet and SFace run on the CPU: in production, 9 channels at 2 fp
 
 ## Configuration
 
-| Setting                       | Default     | Notes                                                                                                                                                                                                             |
-| ----------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `INGESTION_PROCESSES`         | 4           | Number of ingestion processes, which is the number of inference lanes. Each costs a Node process with its own models, plus a CUDA context of a few hundred MB on GPU servers.                                     |
-| `OPENCV_DNN_TARGET`           | unset (CPU) | `cuda` runs both models on the GPU; see [GPU acceleration](#gpu-acceleration).                                                                                                                                    |
-| `UV_THREADPOOL_SIZE`          | 4 (Node)    | Per process. Each channel's pending `readAsync` holds one libuv thread until its next frame arrives, so this must be at least the number of channels in the busiest process, plus a few. 16 is set in production. |
-| Channel `recognitionFps`      | 5           | Frames analysed per second for that channel.                                                                                                                                                                      |
-| Channel `minFaceSizePx`       | 96          | Also sets how far frames are downscaled for detection, so a larger minimum makes detection cheaper.                                                                                                               |
-| Channel `minFaceQuality`      | 40          | Quality gate before embedding.                                                                                                                                                                                    |
-| Channel `similarityThreshold` | 0.36        | Cosine similarity needed for a match.                                                                                                                                                                             |
-| `STATS_INTERVAL_SECONDS`      | 60          | Usage stats window; 0 turns collection off.                                                                                                                                                                       |
+| Setting                             | Default     | Notes                                                                                                                                                                                                             |
+| ----------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INGESTION_PROCESSES`               | 4           | Number of ingestion processes, which is the number of inference lanes. Each costs a Node process with its own models, plus a CUDA context of a few hundred MB on GPU servers.                                     |
+| `OPENCV_DNN_TARGET`                 | unset (CPU) | `cuda` runs both models on the GPU; see [GPU acceleration](#gpu-acceleration).                                                                                                                                    |
+| `UV_THREADPOOL_SIZE`                | 4 (Node)    | Per process. Each channel's pending `readAsync` holds one libuv thread until its next frame arrives, so this must be at least the number of channels in the busiest process, plus a few. 16 is set in production. |
+| Channel `recognitionFps`            | 5           | Frames analysed per second for that channel.                                                                                                                                                                      |
+| Channel `minFaceSizePx`             | 96          | Also sets how far frames are downscaled for detection, so a larger minimum makes detection cheaper.                                                                                                               |
+| Channel `minFaceQuality`            | 40          | Quality gate before embedding.                                                                                                                                                                                    |
+| Channel `similarityThreshold`       | 0.36        | Cosine similarity needed for a match.                                                                                                                                                                             |
+| `usageStatsIntervalSeconds` setting | 60          | Usage stats window (Configuration page); 0 turns collection off.                                                                                                                                                  |
 
 ## Reading the usage page
 

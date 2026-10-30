@@ -142,18 +142,22 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
     private readonly scheduler: SchedulerRegistry,
   ) {}
 
+  // Set up whether or not the ERP connection is configured yet: it can be set on the Configuration
+  // page at any time. Background runs are skipped until it is, and a change to it syncs at once.
   async onModuleInit() {
-    if (!this.client.configured) {
-      this.logger.warn(
-        'ERP_URL, ERP_USERNAME or ERP_PASSWORD is not set: syncing with the ERP is off',
-      );
-      return;
-    }
     this.subscriptions.push(
       this.configuration.changes$.subscribe(({ erpSyncIntervalMinutes }) =>
         this.schedule(erpSyncIntervalMinutes),
       ),
+      this.client.connectionChanges$.subscribe(
+        () => void this.syncInBackground(),
+      ),
     );
+    if (!(await this.client.isConfigured())) {
+      this.logger.warn(
+        'The ERP URL, username or password is not set: syncing with the ERP is off',
+      );
+    }
     this.schedule((await this.configuration.getAll()).erpSyncIntervalMinutes);
     void this.syncInBackground();
   }
@@ -169,6 +173,7 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async syncInBackground() {
+    if (!(await this.client.isConfigured())) return;
     try {
       await this.sync();
     } catch (error) {
@@ -188,7 +193,7 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async run(): Promise<SyncSummary> {
-    if (!this.client.configured) {
+    if (!(await this.client.isConfigured())) {
       throw new BadRequestException('The ERP connection is not configured.');
     }
     const state = await this.state.get();

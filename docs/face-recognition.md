@@ -114,7 +114,7 @@ Channels and profiles, including photos and the default image, are edited in bot
 
 Each side stores the other's id as `externalId`. A deleted record is kept, hidden, with `deletedAt` set, until the ERP has been told about it.
 
-The sync runs only when `ERP_URL`, `ERP_USERNAME` and `ERP_PASSWORD` are all set.
+The sync runs only when the ERP URL, username and password are all set on the Configuration page. The account needs the ERP's Sync Security Server Data permission.
 
 ## Configuration
 
@@ -122,12 +122,17 @@ Admin-editable settings live in the `Configuration` table, one row per key, defi
 
 | Setting                            | Default |
 | ---------------------------------- | ------- |
-| Alerts Retention (days)            | 7       |
 | Include Test Profiles in Alerts    | off     |
+| Alerts Retention (days)            | 7       |
+| Usage Stats Interval (seconds)     | 60      |
+| Usage Stats Retention (days)       | 7       |
+| ERP URL / Username / Password      | unset   |
 | ERP Sync Interval (minutes)        | 5       |
 | ERP Alert Retry Interval (minutes) | 1       |
 
-Deployment settings (database, admin password, ERP connection, GPU, process count) are environment variables; see `.env.sample`.
+The ERP password is never sent back to the UI; saving the form with it blank keeps the stored one.
+
+Deployment settings (database, admin password, GPU, process count) are environment variables; see `.env.sample`.
 
 ## Known limitations
 

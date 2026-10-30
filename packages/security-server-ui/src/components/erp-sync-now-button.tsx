@@ -56,9 +56,7 @@ export function ErpSyncNowButton() {
     </Button>
   );
   return status && !status.configured ? (
-    <Tooltip title="The ERP connection is not configured on the server">
-      {button}
-    </Tooltip>
+    <Tooltip title="The ERP connection is not configured">{button}</Tooltip>
   ) : (
     button
   );

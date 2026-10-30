@@ -7,10 +7,12 @@ import { ErpAlertPushService } from './erp-alert-push.service';
 import { ErpClientService } from './erp-client.service';
 import { ErpSyncService } from './erp-sync.service';
 import { ErpSyncStateService } from './erp-sync-state.service';
+import { ErpUsagePushService } from './erp-usage-push.service';
 import { ErpController } from './erp.controller';
 
-// Everything that talks to the ERP: the two-way channel/profile sync and the alert push.
-// Idle unless ERP_URL, ERP_USERNAME and ERP_PASSWORD are set.
+// Everything that talks to the ERP: the two-way channel/profile sync, the alert push and the
+// usage stats push.
+// Idle until the ERP URL, username and password are set on the Configuration page.
 @Module({
   imports: [
     AlertModule,
@@ -24,6 +26,7 @@ import { ErpController } from './erp.controller';
     ErpSyncStateService,
     ErpAlertPushService,
     ErpSyncService,
+    ErpUsagePushService,
   ],
 })
 export class ErpModule {}
