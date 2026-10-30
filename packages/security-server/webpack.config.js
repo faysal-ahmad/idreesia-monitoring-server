@@ -14,6 +14,13 @@ module.exports = {
       target: 'node',
       compiler: 'tsc',
       main: './src/main.ts',
+      // Forked by IngestionProcessPoolService, so it's built as its own file next to main.js.
+      additionalEntryPoints: [
+        {
+          entryName: 'ingestion-process',
+          entryPath: './src/ingestion/process/ingestion-process.main.ts',
+        },
+      ],
       tsConfig: './tsconfig.app.json',
       assets: ['./src/assets'],
       optimization: false,

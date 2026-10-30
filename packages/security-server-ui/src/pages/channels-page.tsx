@@ -1,6 +1,5 @@
 import {
   DeleteOutlined,
-  ExperimentOutlined,
   PlusOutlined,
   ReloadOutlined,
   VideoCameraOutlined,
@@ -23,7 +22,6 @@ import {
   toApiInput,
 } from '../components/channel-form-modal';
 import { LiveFeedModal } from '../components/live-feed';
-import { TestMatchModal } from '../components/test-match-modal';
 import {
   DEFAULT_MIN_FACE_QUALITY,
   DEFAULT_MIN_FACE_SIZE_PX,
@@ -42,8 +40,6 @@ export default function ChannelsPage() {
     null,
   );
   const [liveChannel, setLiveChannel] = useState<VideoFeedSource | null>(null);
-  const [testMatchChannel, setTestMatchChannel] =
-    useState<VideoFeedSource | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -264,12 +260,6 @@ export default function ChannelsPage() {
                         onClick={() => setLiveChannel(record)}
                       />
                     </Tooltip>
-                    <Tooltip title="Test Match">
-                      <ExperimentOutlined
-                        className="list-actions-icon"
-                        onClick={() => setTestMatchChannel(record)}
-                      />
-                    </Tooltip>
                     <Tooltip
                       title={
                         deleteDisabled
@@ -321,16 +311,6 @@ export default function ChannelsPage() {
       <LiveFeedModal
         channel={liveChannel}
         onClose={() => setLiveChannel(null)}
-      />
-
-      <TestMatchModal
-        open={!!testMatchChannel}
-        channel={testMatchChannel}
-        onClose={() => setTestMatchChannel(null)}
-        onThresholdSaved={() => {
-          invalidate();
-          setTestMatchChannel(null);
-        }}
       />
     </div>
   );

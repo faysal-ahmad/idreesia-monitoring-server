@@ -62,7 +62,7 @@ export class MonitoringProfileController {
     return this.service.remove(id);
   }
 
-  // No app-enforced size cap per the plan — whatever the detection pipeline's decoder can
+  // No app-enforced size cap (see docs/face-recognition.md) — whatever the detection pipeline's decoder can
   // handle is accepted, so multer's own limits are left at their generous defaults here.
   @Post(':id/images')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
