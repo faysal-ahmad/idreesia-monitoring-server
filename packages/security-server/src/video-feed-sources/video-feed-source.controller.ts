@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,7 +8,11 @@ import {
   Param,
   Patch,
   Post,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import {
   CreateVideoFeedSourceSchema,
@@ -66,5 +71,19 @@ export class VideoFeedSourceController {
   @Post(':id/test-match')
   testMatch(@Param('id') id: string) {
     return this.service.testMatch(id);
+  }
+
+  // A frame the admin captured from the live view, as an image file.
+  @Post(':id/analyze-frame')
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  analyzeFrame(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file was uploaded.');
+    }
+    return this.service.analyzeFrame(id, file.buffer);
   }
 }

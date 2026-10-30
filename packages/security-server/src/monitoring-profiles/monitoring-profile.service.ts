@@ -3,13 +3,10 @@ import { randomUUID } from 'node:crypto';
 import * as cv from '@u4/opencv4nodejs';
 import { AlertEventsService } from '../alerts/alert-events.service';
 import { AlertImageStorageService } from '../alerts/alert-image-storage.service';
+import { encodeJpeg } from '../common/jpeg.util';
 import { vectorToSql } from '../common/pgvector.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaceDetectionService } from '../recognition/face-detection.service';
-import {
-  FaceQuality,
-  FaceQualityService,
-} from '../recognition/face-quality.service';
 import {
   EMBEDDING_MODEL_VERSION,
   FaceRecognitionService,
@@ -18,6 +15,9 @@ import {
   CreateMonitoringProfileDto,
   UpdateMonitoringProfileDto,
 } from './monitoring-profile.schema';
+
+// Long side of a list thumbnail: 2x its rendered size, for high-DPI screens.
+const THUMBNAIL_MAX_SIDE = 80;
 
 // Detection is run permissively so marginal faces are still surfaced as a warning rather
 // than silently missed; anything scoring below this isn't returned as a candidate face at all.
@@ -42,15 +42,10 @@ export type ImageUploadResult =
     }
   | {
       status: 'created';
-      image: { id: string; createdAt: Date; quality: FaceQuality };
+      image: { id: string; createdAt: Date };
     };
 
 const ACTIVE = { deletedAt: null };
-
-// Raw queries take the jsonb column as text; null stays SQL NULL rather than JSON 'null'.
-function qualityToSql(quality: FaceQuality | null): string | null {
-  return quality ? JSON.stringify(quality) : null;
-}
 
 // Profiles are edited here and in the ERP; ErpSyncService keeps the two in step. A delete keeps
 // the row (deletedAt) until the ERP has been told, so every read here skips deleted ones.
@@ -60,7 +55,6 @@ export class MonitoringProfileService {
     private readonly prisma: PrismaService,
     private readonly faceDetection: FaceDetectionService,
     private readonly faceRecognition: FaceRecognitionService,
-    private readonly faceQuality: FaceQualityService,
     private readonly alertEvents: AlertEventsService,
     private readonly alertImages: AlertImageStorageService,
   ) {}
@@ -68,33 +62,63 @@ export class MonitoringProfileService {
   async list() {
     const profiles = await this.prisma.monitoringProfile.findMany({
       where: ACTIVE,
-      include: { _count: { select: { images: true, alerts: true } } },
+      include: {
+        _count: { select: { images: true, alerts: true } },
+        // The fallback when no default photo is set (see defaultImageId).
+        images: {
+          select: { id: true },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+        },
+      },
       orderBy: { name: 'asc' },
     });
     return profiles.map((profile) => {
-      const { _count, ...rest } = profile;
-      return { ...rest, imageCount: _count.images, alertCount: _count.alerts };
+      const { _count, images, ...rest } = profile;
+      return {
+        ...rest,
+        imageCount: _count.images,
+        alertCount: _count.alerts,
+        thumbnailImageId: profile.defaultImageId ?? images[0]?.id ?? null,
+      };
     });
+  }
+
+  // A small JPEG of one of the profile's photos, for the list.
+  async getImageThumbnail(profileId: string, imageId: string): Promise<Buffer> {
+    const image = await this.prisma.monitoringProfileImage.findFirst({
+      where: { id: imageId, profileId },
+      select: { image: true },
+    });
+    if (!image) throw new NotFoundException('Image not found.');
+    const decoded = cv.imdecode(Buffer.from(image.image));
+    try {
+      return encodeJpeg(decoded, THUMBNAIL_MAX_SIDE, 80);
+    } finally {
+      decoded.release();
+    }
   }
 
   async findOne(id: string) {
     const profile = await this.prisma.monitoringProfile.findFirst({
       where: { id, ...ACTIVE },
-      include: { images: { select: { id: true, createdAt: true } } },
+      include: {
+        images: {
+          select: { id: true, createdAt: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
     });
     if (!profile) throw new NotFoundException('Monitoring profile not found.');
 
     const imagesWithPreview = await Promise.all(
       profile.images.map(async (image) => {
-        const [row] = await this.prisma.$queryRaw<
-          { image: Uint8Array; quality: FaceQuality | null }[]
-        >`
-          SELECT image, quality FROM security_server."MonitoringProfileImage" WHERE id = ${image.id}
+        const [row] = await this.prisma.$queryRaw<{ image: Uint8Array }[]>`
+          SELECT image FROM security_server."MonitoringProfileImage" WHERE id = ${image.id}
         `;
         return {
           id: image.id,
           createdAt: image.createdAt,
-          quality: row.quality,
           // $queryRaw deserializes bytea columns as a plain Uint8Array (not a Buffer), whose
           // toString() ignores the 'base64' arg and dumps comma-joined byte values instead.
           previewImage: `data:image/jpeg;base64,${Buffer.from(row.image).toString('base64')}`,
@@ -102,7 +126,12 @@ export class MonitoringProfileService {
       }),
     );
 
-    return { ...profile, images: imagesWithPreview };
+    return {
+      ...profile,
+      // Resolved, so the drawer always shows which photo the list uses.
+      defaultImageId: profile.defaultImageId ?? profile.images[0]?.id ?? null,
+      images: imagesWithPreview,
+    };
   }
 
   async create(dto: CreateMonitoringProfileDto) {
@@ -188,11 +217,9 @@ export class MonitoringProfileService {
     }
 
     const aligned = this.faceRecognition.align(decoded, face.landmarks);
-    const quality = this.faceQuality.assess(face, aligned);
     const id = await this.insertImage(profileId, {
       embedding: this.faceRecognition.embed(aligned),
       jpeg: cv.imencode('.jpg', decoded),
-      quality,
     });
     await this.touch(profileId);
 
@@ -201,46 +228,7 @@ export class MonitoringProfileService {
     >`
       SELECT id, "createdAt" FROM security_server."MonitoringProfileImage" WHERE id = ${id}
     `;
-    return { status: 'created', image: { ...created, quality } };
-  }
-
-  // Re-scores every photo of a profile - run by hand from the UI, both for photos stored before
-  // scoring existed and after the scoring constants are tuned. Only `quality` changes: not the
-  // embedding (so not matching) and not updatedAt (quality isn't synced to the ERP).
-  async recalculateQuality(
-    profileId: string,
-  ): Promise<{ recalculated: number; notRated: number }> {
-    await this.ensureExists(profileId);
-    const rows = await this.prisma.$queryRaw<
-      { id: string; image: Uint8Array }[]
-    >`
-      SELECT id, image FROM security_server."MonitoringProfileImage" WHERE "profileId" = ${profileId}
-    `;
-
-    let notRated = 0;
-    for (const row of rows) {
-      const decoded = cv.imdecode(Buffer.from(row.image));
-      const faces = this.faceDetection.detect(
-        decoded,
-        DETECTION_SCORE_THRESHOLD,
-      );
-      let quality: FaceQuality | null = null;
-      if (faces.length > 0) {
-        const face = faces.reduce((best, current) =>
-          current.confidence > best.confidence ? current : best,
-        );
-        quality = this.faceQuality.assess(
-          face,
-          this.faceRecognition.align(decoded, face.landmarks),
-        );
-      } else {
-        notRated++;
-      }
-      await this.prisma.$executeRaw`
-        UPDATE security_server."MonitoringProfileImage" SET quality = ${qualityToSql(quality)}::jsonb WHERE id = ${row.id}
-      `;
-    }
-    return { recalculated: rows.length - notRated, notRated };
+    return { status: 'created', image: created };
   }
 
   async removeImage(profileId: string, imageId: string) {
@@ -251,14 +239,32 @@ export class MonitoringProfileService {
     if (deleted.count === 0) {
       throw new NotFoundException('Image not found for this profile.');
     }
+    // A removed default photo's defaultImageId is cleared by its foreign key (ON DELETE SET NULL),
+    // so the profile falls back to its oldest remaining photo.
     await this.touch(profileId);
+  }
+
+  // The default photo only picks the list thumbnail: it plays no part in matching. Synced with the
+  // ERP, so this is a profile change (updatedAt) for the next sync to push.
+  async setDefaultImage(profileId: string, imageId: string) {
+    await this.ensureExists(profileId);
+    const image = await this.prisma.monitoringProfileImage.findFirst({
+      where: { id: imageId, profileId },
+      select: { id: true },
+    });
+    if (!image)
+      throw new NotFoundException('Image not found for this profile.');
+    await this.prisma.monitoringProfile.update({
+      where: { id: profileId },
+      data: { defaultImageId: imageId },
+    });
   }
 
   // Embeds a photo synced from the ERP, with none of the upload checks above (the ERP checked it):
   // the most confident face found is used. null if there's no face at all.
   computeSyncedImageEmbedding(
     fileBuffer: Buffer,
-  ): { embedding: number[]; jpeg: Buffer; quality: FaceQuality } | null {
+  ): { embedding: number[]; jpeg: Buffer } | null {
     const decoded = cv.imdecode(fileBuffer);
     const faces = this.faceDetection.detect(
       decoded,
@@ -272,29 +278,26 @@ export class MonitoringProfileService {
     return {
       embedding: this.faceRecognition.embed(aligned),
       jpeg: cv.imencode('.jpg', decoded),
-      quality: this.faceQuality.assess(face, aligned),
     };
   }
 
-  // embedding and quality null: a synced photo with no face found (see computeSyncedImageEmbedding).
+  // embedding null: a synced photo with no face found (see computeSyncedImageEmbedding).
   async insertImage(
     profileId: string,
     {
       embedding,
       jpeg,
-      quality,
     }: {
       embedding: number[] | null;
       jpeg: Uint8Array;
-      quality: FaceQuality | null;
     },
     externalId: string | null = null,
   ): Promise<string> {
     const id = randomUUID();
     const embeddingSql = embedding ? vectorToSql(embedding) : null;
     await this.prisma.$executeRaw`
-      INSERT INTO security_server."MonitoringProfileImage" (id, "externalId", "profileId", image, embedding, "embeddingModelVersion", quality, "createdAt")
-      VALUES (${id}, ${externalId}, ${profileId}, ${jpeg}, ${embeddingSql}::vector, ${EMBEDDING_MODEL_VERSION}, ${qualityToSql(quality)}::jsonb, now())
+      INSERT INTO security_server."MonitoringProfileImage" (id, "externalId", "profileId", image, embedding, "embeddingModelVersion", "createdAt")
+      VALUES (${id}, ${externalId}, ${profileId}, ${jpeg}, ${embeddingSql}::vector, ${EMBEDDING_MODEL_VERSION}, now())
     `;
     return id;
   }

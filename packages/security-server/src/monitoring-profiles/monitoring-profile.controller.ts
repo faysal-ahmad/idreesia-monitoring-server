@@ -4,10 +4,12 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   Param,
   Patch,
   Post,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -79,10 +81,27 @@ export class MonitoringProfileController {
     );
   }
 
-  @Post(':id/images/recalculate-quality')
-  @HttpCode(200)
-  recalculateQuality(@Param('id') profileId: string) {
-    return this.service.recalculateQuality(profileId);
+  // A photo is never changed once stored (only added or removed), so the thumbnail behind a URL
+  // never changes either. Private, since it's behind the admin session.
+  @Get(':id/images/:imageId/thumbnail')
+  @Header('Content-Type', 'image/jpeg')
+  @Header('Cache-Control', 'private, max-age=31536000, immutable')
+  async getImageThumbnail(
+    @Param('id') profileId: string,
+    @Param('imageId') imageId: string,
+  ): Promise<StreamableFile> {
+    return new StreamableFile(
+      await this.service.getImageThumbnail(profileId, imageId),
+    );
+  }
+
+  @Post(':id/images/:imageId/default')
+  @HttpCode(204)
+  setDefaultImage(
+    @Param('id') profileId: string,
+    @Param('imageId') imageId: string,
+  ) {
+    return this.service.setDefaultImage(profileId, imageId);
   }
 
   @Delete(':id/images/:imageId')

@@ -5,15 +5,36 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
+import * as cv from '@u4/opencv4nodejs';
 import { filter, Subscription } from 'rxjs';
 import { AlertEventsService } from '../alerts/alert-events.service';
 import { AlertImageStorageService } from '../alerts/alert-image-storage.service';
+import { encodeJpeg } from '../common/jpeg.util';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { FaceQuality } from '../recognition/face-quality.service';
 import { ErpClientService, ErpRequestError } from './erp-client.service';
 import { replaceInterval } from './replace-interval';
 
 const RETRY_INTERVAL_NAME = 'erp-alert-retry';
+
+// The ERP gets a smaller copy of the snapshot than is kept here: enough for a reviewer to make out
+// the face, at a fraction of the transfer and storage cost.
+const ERP_IMAGE_MAX_SIDE = 1280;
+const ERP_IMAGE_JPEG_QUALITY = 75;
+
+// Falls back to the stored bytes if they can't be decoded, rather than holding the alert back.
+function shrinkForErp(stored: Buffer): Buffer {
+  let decoded: cv.Mat | undefined;
+  try {
+    decoded = cv.imdecode(stored);
+    return encodeJpeg(decoded, ERP_IMAGE_MAX_SIDE, ERP_IMAGE_JPEG_QUALITY);
+  } catch {
+    return stored;
+  } finally {
+    decoded?.release();
+  }
+}
 
 type PushResult = 'sent' | 'rejected' | 'unreachable';
 
@@ -104,6 +125,16 @@ export class ErpAlertPushService implements OnModuleInit, OnModuleDestroy {
     for (const { id } of pending) {
       if ((await this.push(id)) === 'unreachable') return;
     }
+    // Sent on every run, even one with nothing to send, so the ERP's alerts page can show when
+    // this server last got through - a quiet camera then isn't mistaken for a dead server.
+    try {
+      await this.client.request('POST', '/alerts/heartbeat', { body: {} });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.lastError = message;
+      this.logger.warn(`Could not check in with the ERP: ${message}`);
+      return;
+    }
     this.lastError = null;
   }
 
@@ -112,7 +143,9 @@ export class ErpAlertPushService implements OnModuleInit, OnModuleDestroy {
     // Deleted meanwhile (retention purge or a profile/channel removed by the sync).
     if (!alert || alert.erpSyncStatus !== 'PENDING') return 'sent';
 
-    const image = await this.images.read(alert.imageFile);
+    const stored = await this.images.read(alert.imageFile);
+    const image = stored && shrinkForErp(stored);
+    const quality = alert.faceQuality as FaceQuality | null;
     try {
       await this.client.request(
         'PUT',
@@ -123,6 +156,10 @@ export class ErpAlertPushService implements OnModuleInit, OnModuleDestroy {
             channelId: alert.channelId,
             timestamp: alert.timestamp.toISOString(),
             similarityScore: alert.similarityScore,
+            faceSizePx: alert.faceSizePx,
+            faceQuality: quality
+              ? { score: quality.score, reasons: quality.reasons }
+              : null,
             image: image
               ? { mimeType: 'image/jpeg', data: image.toString('base64') }
               : null,

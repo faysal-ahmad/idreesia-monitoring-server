@@ -52,6 +52,8 @@ export class UsageStatsQueryService {
           readFailures: true,
           reconnects: true,
           faces: true,
+          skippedFaceSize: true,
+          skippedFaceQuality: true,
           inferenceMs: true,
         },
         _max: { frameWidth: true, frameHeight: true },
@@ -113,6 +115,9 @@ export class UsageStatsQueryService {
       const framesProcessed = group._sum.framesProcessed ?? 0;
       const skippedBusy = group._sum.skippedBusy ?? 0;
       const inferenceMs = group._sum.inferenceMs ?? 0;
+      const faces = group._sum.faces ?? 0;
+      const skippedFaceSize = group._sum.skippedFaceSize ?? 0;
+      const skippedFaceQuality = group._sum.skippedFaceQuality ?? 0;
       return [
         {
           channelId: channel.id,
@@ -127,7 +132,15 @@ export class UsageStatsQueryService {
           busySkipPct: percent(skippedBusy, framesProcessed + skippedBusy),
           // This channel's slice of the server's inferenceBusyPct.
           inferenceSharePct: percent(inferenceMs, coveredMs),
-          faces: group._sum.faces ?? 0,
+          // Faces that passed the size and quality checks and were matched.
+          faces,
+          skippedFaceSize,
+          skippedFaceQuality,
+          // Share of detected faces skipped as too small or too poor to match.
+          faceSkipPct: percent(
+            skippedFaceSize + skippedFaceQuality,
+            faces + skippedFaceSize + skippedFaceQuality,
+          ),
           readFailures: group._sum.readFailures ?? 0,
           reconnects: group._sum.reconnects ?? 0,
         },

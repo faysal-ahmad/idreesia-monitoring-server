@@ -13,6 +13,9 @@ export interface VideoFeedSource {
   enabled: boolean;
   similarityThreshold: number | null;
   recognitionFps: number;
+  // null = the server default, 0 = no check.
+  minFaceSizePx: number | null;
+  minFaceQuality: number | null;
   createdAt: string;
   updatedAt: string;
   alertCount: number;
@@ -29,6 +32,24 @@ export interface TestMatchResult {
   results: { profileId: string; profileName: string; score: number }[];
 }
 
+// Box is YuNet's own (unpadded) face box, in the analyzed image's pixels.
+export interface AnalyzedFace {
+  box: { x: number; y: number; width: number; height: number };
+  confidence: number;
+  sizePx: number;
+  quality: number;
+  qualityReasons: string[];
+}
+
+export interface FrameAnalysis {
+  width: number;
+  height: number;
+  // The channel's effective minimums (its own, or the server default); 0 = check off.
+  minFaceSizePx: number;
+  minFaceQuality: number;
+  faces: AnalyzedFace[];
+}
+
 export interface MonitoringProfileSummary {
   id: string;
   name: string;
@@ -37,6 +58,8 @@ export interface MonitoringProfileSummary {
   updatedAt: string;
   imageCount: number;
   alertCount: number;
+  // One of its photos, shown on the list; null when it has none.
+  thumbnailImageId: string | null;
 }
 
 export type FaceQualitySignal =
@@ -54,11 +77,11 @@ export interface MonitoringProfileImage {
   id: string;
   createdAt: string;
   previewImage: string;
-  // null = no face found, or not scored yet.
-  quality: FaceQuality | null;
 }
 
 export interface MonitoringProfileDetail extends MonitoringProfileSummary {
+  // The photo used as the list thumbnail (its oldest, if none was chosen); null with no photos.
+  defaultImageId: string | null;
   images: MonitoringProfileImage[];
 }
 
@@ -72,7 +95,7 @@ export type ImageUploadResult =
     }
   | {
       status: 'created';
-      image: { id: string; createdAt: string; quality: FaceQuality };
+      image: { id: string; createdAt: string };
     };
 
 export interface Alert {
@@ -81,6 +104,9 @@ export interface Alert {
   imageFile: string;
   timestamp: string;
   similarityScore: number;
+  // The matched face's shorter side (native px) and quality; null on older alerts.
+  faceSizePx: number | null;
+  faceQuality: FaceQuality | null;
   profile: { id: string; name: string; isTest: boolean };
   channel: { id: string; name: string };
 }
@@ -165,7 +191,11 @@ export interface ChannelUsage {
   processedFps: number;
   busySkipPct: number;
   inferenceSharePct: number;
+  // Faces that passed the size and quality checks and were matched.
   faces: number;
+  skippedFaceSize: number;
+  skippedFaceQuality: number;
+  faceSkipPct: number;
   readFailures: number;
   reconnects: number;
 }
