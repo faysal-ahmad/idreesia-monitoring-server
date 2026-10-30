@@ -174,7 +174,7 @@ export default function UsagePage() {
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          title="Usage stats collection is turned off on this server (STATS_INTERVAL_SECONDS=0)."
+          title="Usage stats collection is turned off (Usage Stats Interval is 0 on the Configuration page)."
         />
       )}
 

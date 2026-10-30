@@ -44,7 +44,7 @@ model VideoFeedSource {
 }
 
 // The load one channel put on the server over one stats window (see UsageStatsService), for judging
-// which cameras are expensive. Kept for STATS_RETENTION_DAYS, then purged.
+// which cameras are expensive. Kept for the usageStatsRetentionDays setting, then purged.
 model ChannelStats {
   id              String          @id @default(cuid())
   windowStart     DateTime
@@ -82,7 +82,7 @@ model ChannelStats {
 }
 
 // Server-wide utilisation over one stats window (see UsageStatsService), for judging whether there is
-// room for more cameras. Kept for STATS_RETENTION_DAYS, then purged.
+// room for more cameras. Kept for the usageStatsRetentionDays setting, then purged.
 model ServerStats {
   id                String   @id @default(cuid())
   windowStart       DateTime @unique
@@ -223,6 +223,9 @@ model ErpSyncState {
   lastSyncStartedAt DateTime?
   lastSyncedAt      DateTime?
   lastSyncError     String?
+  // End of the last 5-minute usage-stats bucket the ERP has stored (see ErpUsagePushService).
+  usageStatsPushedUntil   DateTime?
+  lastUsageStatsPushError String?
   updatedAt         DateTime  @updatedAt
 
   @@schema("security_server")

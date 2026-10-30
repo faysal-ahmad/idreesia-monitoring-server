@@ -1,4 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Observable, Subject, Subscription } from 'rxjs';
+import { ConfigurationService } from '../configuration/configuration.service';
+import { ConfigValues } from '../configuration/configuration.schema';
 
 // The token is renewed this long before the ERP says it expires.
 const TOKEN_REFRESH_MARGIN_MS = 24 * 60 * 60 * 1000;
@@ -30,20 +33,66 @@ async function readError(response: Response): Promise<string> {
   }
 }
 
+interface Connection {
+  baseUrl: string;
+  username: string;
+  password: string;
+}
+
+function toConnection(values: ConfigValues): Connection {
+  return {
+    baseUrl: values.erpUrl.replace(/\/+$/, ''),
+    username: values.erpUsername,
+    password: values.erpPassword,
+  };
+}
+
 // Client for the ERP's security-server sync API (see docs/security-server-sync-api.md in
-// idreesia-erp). Logs in as the service account from ERP_USERNAME/ERP_PASSWORD and keeps the
-// token until shortly before it expires; a 401 logs in again once.
+// idreesia-erp). Logs in as the service account from the ERP URL/username/password settings and
+// keeps the token until shortly before it expires; a 401 logs in again once.
 @Injectable()
-export class ErpClientService {
+export class ErpClientService implements OnModuleDestroy {
   private readonly logger = new Logger(ErpClientService.name);
-  private readonly baseUrl = (process.env.ERP_URL ?? '').replace(/\/+$/, '');
-  private readonly username = process.env.ERP_USERNAME ?? '';
-  private readonly password = process.env.ERP_PASSWORD ?? '';
+  private connection: Connection = { baseUrl: '', username: '', password: '' };
+  // The settings are loaded once at startup; every check of the connection waits for that, since
+  // the services that use this client start up alongside it.
+  private readonly loaded: Promise<void>;
+  private readonly subscription: Subscription;
+  private readonly connectionChanges = new Subject<void>();
+  // Emits after the connection settings change, so pending work can be sent straight away.
+  readonly connectionChanges$: Observable<void> =
+    this.connectionChanges.asObservable();
   private token: { value: string; expiresAt: number } | null = null;
   private pendingLogin: Promise<string> | null = null;
 
-  get configured(): boolean {
-    return Boolean(this.baseUrl && this.username && this.password);
+  constructor(configuration: ConfigurationService) {
+    this.loaded = configuration.getAll().then((values) => {
+      this.connection = toConnection(values);
+    });
+    this.subscription = configuration.changes$.subscribe((values) => {
+      const next = toConnection(values);
+      const { baseUrl, username, password } = this.connection;
+      if (
+        next.baseUrl === baseUrl &&
+        next.username === username &&
+        next.password === password
+      ) {
+        return;
+      }
+      this.connection = next;
+      this.token = null;
+      this.connectionChanges.next();
+    });
+  }
+
+  onModuleDestroy() {
+    this.subscription.unsubscribe();
+  }
+
+  async isConfigured(): Promise<boolean> {
+    await this.loaded;
+    const { baseUrl, username, password } = this.connection;
+    return Boolean(baseUrl && username && password);
   }
 
   // `path` is relative to /api/security-server. Network failures reject with fetch's own error.
@@ -52,9 +101,9 @@ export class ErpClientService {
     path: string,
     options: RequestOptions = {},
   ): Promise<Response> {
-    if (!this.configured) {
+    if (!(await this.isConfigured())) {
       throw new Error(
-        'The ERP connection is not configured (ERP_URL, ERP_USERNAME, ERP_PASSWORD).',
+        'The ERP connection is not configured (ERP URL, username and password on the Configuration page).',
       );
     }
     let response = await this.send(
@@ -82,7 +131,7 @@ export class ErpClientService {
     { body, headers }: RequestOptions,
     token: string,
   ) {
-    return fetch(`${this.baseUrl}/api/security-server${path}`, {
+    return fetch(`${this.connection.baseUrl}/api/security-server${path}`, {
       method,
       headers: {
         Authorization: token,
@@ -109,13 +158,11 @@ export class ErpClientService {
   }
 
   private async login(): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/login`, {
+    const { baseUrl, username, password } = this.connection;
+    const response = await fetch(`${baseUrl}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: this.username,
-        password: this.password,
-      }),
+      body: JSON.stringify({ username, password }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) {
@@ -129,7 +176,7 @@ export class ErpClientService {
       tokenExpires: string;
     };
     this.token = { value: token, expiresAt: new Date(tokenExpires).getTime() };
-    this.logger.log(`Logged in to the ERP as ${this.username}`);
+    this.logger.log(`Logged in to the ERP as ${username}`);
     return token;
   }
 }

@@ -7,7 +7,12 @@ const STATE_ID = 1;
 export type ErpSyncStateUpdate = Partial<
   Pick<
     ErpSyncState,
-    'pullCursor' | 'lastSyncStartedAt' | 'lastSyncedAt' | 'lastSyncError'
+    | 'pullCursor'
+    | 'lastSyncStartedAt'
+    | 'lastSyncedAt'
+    | 'lastSyncError'
+    | 'usageStatsPushedUntil'
+    | 'lastUsageStatsPushError'
   >
 >;
 
