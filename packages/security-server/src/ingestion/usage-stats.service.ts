@@ -9,60 +9,23 @@ import { execFile } from 'child_process';
 import { availableParallelism } from 'os';
 import { IntervalHistogram, monitorEventLoopDelay } from 'perf_hooks';
 import { PrismaService } from '../prisma/prisma.service';
+import { ChannelWindow } from './channel-stats-recorder';
+import { IngestionProcessPoolService } from './ingestion-process-pool.service';
 
 // How loaded the server is and how much each camera contributes, to judge whether there's room for
-// more cameras. Once per window it writes one ServerStats row (GPU, CPU, inference lane) and one
-// ChannelStats row per channel with any activity. Recording from the frame loop is in-memory counter
-// bumps only; the DB is touched once per window.
+// more cameras. Once per window it writes one ServerStats row (GPU, CPU, inference lanes) and one
+// ChannelStats row per channel with any activity. The per-channel counters are kept by the
+// ingestion processes (ChannelStatsRecorder) and collected here once per window, so the DB is
+// touched once per window.
 const DEFAULT_INTERVAL_SECONDS = 60;
 const DEFAULT_RETENTION_DAYS = 7;
 const GPU_SAMPLE_MS = 5_000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-export type FrameSkipReason = 'fps' | 'busy';
-export type InferenceKind = 'detect' | 'embed';
-export type FaceSkipReason = 'size' | 'quality';
-
-interface ChannelWindow {
-  frameWidth?: number;
-  frameHeight?: number;
-  framesRead: number;
-  framesProcessed: number;
-  skippedFps: number;
-  skippedBusy: number;
-  readFailures: number;
-  reconnects: number;
-  // Detected faces skipped before matching (see face-gate.ts).
-  skippedFaceSize: number;
-  skippedFaceQuality: number;
-  detectMs: number;
-  detectCount: number;
-  // One per embedded face, so embedCount is the face count.
-  embedMs: number;
-  embedCount: number;
-}
-
 interface GpuSample {
   utilPct: number;
   memUsedMb: number;
   memTotalMb: number;
-}
-
-function emptyWindow(): ChannelWindow {
-  return {
-    framesRead: 0,
-    framesProcessed: 0,
-    skippedFps: 0,
-    skippedBusy: 0,
-    readFailures: 0,
-    reconnects: 0,
-    skippedFaceSize: 0,
-    skippedFaceQuality: 0,
-    detectMs: 0,
-    detectCount: 0,
-    embedMs: 0,
-    embedCount: 0,
-  };
 }
 
 function round(value: number): number {
@@ -78,6 +41,25 @@ function nonNegativeNumberFromEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   const value = Number(raw);
   return raw && value >= 0 ? value : fallback;
+}
+
+// A channel only ever runs in one ingestion process, but sum rather than overwrite in case one was
+// removed and re-added to another process within the window.
+function mergeWindow(into: ChannelWindow, from: ChannelWindow) {
+  into.frameWidth = from.frameWidth ?? into.frameWidth;
+  into.frameHeight = from.frameHeight ?? into.frameHeight;
+  into.framesRead += from.framesRead;
+  into.framesProcessed += from.framesProcessed;
+  into.skippedFps += from.skippedFps;
+  into.skippedBusy += from.skippedBusy;
+  into.readFailures += from.readFailures;
+  into.reconnects += from.reconnects;
+  into.skippedFaceSize += from.skippedFaceSize;
+  into.skippedFaceQuality += from.skippedFaceQuality;
+  into.detectMs += from.detectMs;
+  into.detectCount += from.detectCount;
+  into.embedMs += from.embedMs;
+  into.embedCount += from.embedCount;
 }
 
 // One line per GPU: "utilization, memory used, memory total" (percent, MiB, MiB). Collapsed to the
@@ -125,7 +107,6 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
   );
   private readonly dnnTarget =
     process.env.OPENCV_DNN_TARGET === 'cuda' ? 'cuda' : 'cpu';
-  private windows = new Map<string, ChannelWindow>();
   private gpuSamples: GpuSample[] = [];
   // Stops sampling after the first failure: no nvidia-smi means no GPU, and won't change at runtime.
   private gpuAvailable = true;
@@ -135,7 +116,10 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
   private gpuTimer?: NodeJS.Timeout;
   private eventLoopDelay?: IntervalHistogram;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pool: IngestionProcessPoolService,
+  ) {}
 
   onModuleInit() {
     if (!this.enabled) return;
@@ -162,55 +146,6 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
     clearInterval(this.gpuTimer);
     await this.flush();
     this.eventLoopDelay?.disable();
-  }
-
-  frameRead(channelId: string, width: number, height: number) {
-    const window = this.window(channelId);
-    if (!window) return;
-    window.framesRead++;
-    window.frameWidth = width;
-    window.frameHeight = height;
-  }
-
-  frameProcessed(channelId: string) {
-    const window = this.window(channelId);
-    if (window) window.framesProcessed++;
-  }
-
-  frameSkipped(channelId: string, reason: FrameSkipReason) {
-    const window = this.window(channelId);
-    if (!window) return;
-    if (reason === 'busy') window.skippedBusy++;
-    else window.skippedFps++;
-  }
-
-  faceSkipped(channelId: string, reason: FaceSkipReason) {
-    const window = this.window(channelId);
-    if (!window) return;
-    if (reason === 'size') window.skippedFaceSize++;
-    else window.skippedFaceQuality++;
-  }
-
-  readFailure(channelId: string) {
-    const window = this.window(channelId);
-    if (window) window.readFailures++;
-  }
-
-  reconnect(channelId: string) {
-    const window = this.window(channelId);
-    if (window) window.reconnects++;
-  }
-
-  inference(channelId: string, kind: InferenceKind, ms: number) {
-    const window = this.window(channelId);
-    if (!window) return;
-    if (kind === 'detect') {
-      window.detectMs += ms;
-      window.detectCount++;
-    } else {
-      window.embedMs += ms;
-      window.embedCount++;
-    }
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
@@ -240,16 +175,6 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
     return this.intervalSeconds > 0;
   }
 
-  private window(channelId: string): ChannelWindow | undefined {
-    if (!this.enabled) return undefined;
-    let window = this.windows.get(channelId);
-    if (!window) {
-      window = emptyWindow();
-      this.windows.set(channelId, window);
-    }
-    return window;
-  }
-
   private async recordGpuSample() {
     if (!this.gpuAvailable) return;
     const sample = await sampleGpu();
@@ -264,19 +189,27 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async flush() {
-    // Swap first, so frames recorded while the write is in flight land in the next window.
-    const windows = this.windows;
+    // Swap first, so samples taken while the collection and write are in flight land in the next window.
     const gpuSamples = this.gpuSamples;
     const windowStart = this.windowStart;
     const windowEnd = new Date();
     const cpu = process.cpuUsage(this.cpuAtWindowStart);
-    this.windows = new Map();
     this.gpuSamples = [];
     this.windowStart = windowEnd;
     this.cpuAtWindowStart = process.cpuUsage();
 
     const windowMs = windowEnd.getTime() - windowStart.getTime();
     if (windowMs <= 0) return;
+
+    const processStats = await this.pool.collectStats();
+    const windows = new Map<string, ChannelWindow>();
+    for (const stats of processStats) {
+      for (const [channelId, window] of Object.entries(stats.windows)) {
+        const existing = windows.get(channelId);
+        if (existing) mergeWindow(existing, window);
+        else windows.set(channelId, window);
+      }
+    }
 
     const channelRows = Array.from(windows, ([channelId, window]) => ({
       windowStart,
@@ -298,9 +231,20 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
       embedAvgMs: averageOrNull(window.embedMs, window.embedCount),
     }));
 
-    const inferenceMs = channelRows.reduce(
-      (sum, row) => sum + row.inferenceMs,
-      0,
+    // Each ingestion process is one inference lane, and frames start being skipped as soon as any
+    // one lane fills, so the busiest lane is the one that matters.
+    const laneInferenceMs = processStats.map((stats) =>
+      Object.values(stats.windows).reduce(
+        (sum, window) => sum + window.detectMs + window.embedMs,
+        0,
+      ),
+    );
+    const busiestLaneMs = laneInferenceMs.length
+      ? Math.max(...laneInferenceMs)
+      : 0;
+    const cpuUs = processStats.reduce(
+      (sum, stats) => sum + stats.cpuUserUs + stats.cpuSystemUs,
+      cpu.user + cpu.system,
     );
     const gpuUtil = gpuSamples.map((sample) => sample.utilPct);
     const lastGpuSample = gpuSamples.at(-1);
@@ -310,19 +254,29 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
       windowEnd,
       activeChannels: channelRows.filter((row) => row.framesRead > 0).length,
       dnnTarget: this.dnnTarget,
-      inferenceBusyPct: round((inferenceMs / windowMs) * 100),
+      inferenceBusyPct: round((busiestLaneMs / windowMs) * 100),
       gpuUtilAvgPct: gpuUtil.length
         ? round(gpuUtil.reduce((sum, util) => sum + util, 0) / gpuUtil.length)
         : null,
       gpuUtilMaxPct: gpuUtil.length ? Math.max(...gpuUtil) : null,
       gpuMemUsedMb: lastGpuSample?.memUsedMb ?? null,
       gpuMemTotalMb: lastGpuSample?.memTotalMb ?? null,
-      cpuPct: round(((cpu.user + cpu.system) / 1000 / windowMs) * 100),
+      // The main process and every ingestion process together.
+      cpuPct: round((cpuUs / 1000 / windowMs) * 100),
       cpuCores: availableParallelism(),
+      // The worst of any process: a lagging ingestion process delays its channels' frames.
       eventLoopLagP95Ms: round(
-        (this.eventLoopDelay?.percentile(95) ?? 0) / 1e6,
+        Math.max(
+          (this.eventLoopDelay?.percentile(95) ?? 0) / 1e6,
+          ...processStats.map((stats) => stats.eventLoopLagP95Ms),
+        ),
       ),
-      eventLoopLagMaxMs: round((this.eventLoopDelay?.max ?? 0) / 1e6),
+      eventLoopLagMaxMs: round(
+        Math.max(
+          (this.eventLoopDelay?.max ?? 0) / 1e6,
+          ...processStats.map((stats) => stats.eventLoopLagMaxMs),
+        ),
+      ),
     };
     this.eventLoopDelay?.reset();
 
@@ -332,7 +286,8 @@ export class UsageStatsService implements OnModuleInit, OnModuleDestroy {
     );
     this.logger.log(
       `Usage ${Math.round(windowMs / 1000)}s: ${serverRow.activeChannels} channel(s), ` +
-        `inference ${serverRow.inferenceBusyPct}% busy, skipped busy ${skippedBusy}, ` +
+        `busiest of ${processStats.length}/${this.pool.size} inference lane(s) ${serverRow.inferenceBusyPct}% busy, ` +
+        `skipped busy ${skippedBusy}, ` +
         `GPU ${serverRow.gpuUtilAvgPct ?? '-'}% (max ${serverRow.gpuUtilMaxPct ?? '-'}%) ` +
         `${serverRow.gpuMemUsedMb ?? '-'}/${serverRow.gpuMemTotalMb ?? '-'} MiB, ` +
         `CPU ${serverRow.cpuPct}% of ${serverRow.cpuCores} cores`,

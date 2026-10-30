@@ -64,6 +64,12 @@ yarn docker:production-local:build
 yarn docker:production-local:up
 ```
 
+### Ingestion processes
+
+The security server runs camera recognition in `INGESTION_PROCESSES` child processes (default 4), forked from the main one. OpenCV's Node binding only works from one thread per process, so this is how several cameras are processed at once. Each enabled channel is assigned to the least-loaded process, which reads its go2rtc re-stream, detects, embeds and matches faces, and sends alerts, health and usage stats back to the main process. The main process keeps the database, the API, profile enrollment and the channels page's frame tools.
+
+If an ingestion process crashes, only its channels go offline; it's restarted after 5 seconds. Its log lines are prefixed `[Ingestion <n>]`.
+
 ### Container logs
 
 Both production compose files send every container's logs to the host's systemd journal (`journald` log driver), so they outlive the containers. Bound their disk use by capping the journal at 2 GB once on the host (this applies to the whole journal, not just Docker; once the cap is reached, journald deletes the oldest entries first):
