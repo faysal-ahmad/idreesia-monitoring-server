@@ -30,10 +30,19 @@ const OUTPUT_NAMES = [
 // distinct camera resolution and min face size, so this is well above any real deployment.
 const MAX_LIVE_NETS = 16;
 
-// A Mat's elements as float32s (YuNet's outputs are CV_32F). getData() copies into a fresh Buffer,
-// which Node may place at an offset in its shared pool; Float32Array needs that offset 4-aligned.
+// A Mat's elements as float32s (YuNet's outputs are CV_32F). The outputs are 3D ([1, anchors, n])
+// and getData() only takes 2D Mats, so it reads through a 2D view (flattenFloat shares the memory,
+// copying nothing). getData() copies into a fresh Buffer, which Node may place at an offset in its
+// shared pool; Float32Array needs that offset 4-aligned.
 function floatData(mat: cv.Mat): Float32Array {
-  const data = mat.getData();
+  const [, anchors, values] = mat.sizes;
+  const flat = mat.flattenFloat(anchors, values);
+  let data: Buffer;
+  try {
+    data = flat.getData();
+  } finally {
+    flat.release();
+  }
   return data.byteOffset % 4 === 0
     ? new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4)
     : new Float32Array(new Uint8Array(data).buffer);
