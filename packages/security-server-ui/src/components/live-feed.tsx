@@ -193,6 +193,19 @@ function FaceLegend({ frame }: { frame: CapturedFrame }) {
             className="face-legend-swatch"
             style={{ borderColor: faceColor(index) }}
           />
+          {face.match && (
+            <>
+              <Text strong>
+                {face.match.profileName}
+                {face.match.isTest && ' (test)'}
+              </Text>
+              <Tooltip
+                title={`Channel threshold ${analysis.similarityThreshold.toFixed(2)}`}
+              >
+                <Text>Score {face.match.score.toFixed(2)}</Text>
+              </Tooltip>
+            </>
+          )}
           <Tooltip
             title={
               belowSize(face.sizePx)

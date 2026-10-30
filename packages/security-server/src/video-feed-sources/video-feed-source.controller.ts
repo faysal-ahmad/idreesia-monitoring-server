@@ -68,11 +68,6 @@ export class VideoFeedSourceController {
     return this.service.verify(dto);
   }
 
-  @Post(':id/test-match')
-  testMatch(@Param('id') id: string) {
-    return this.service.testMatch(id);
-  }
-
   // A frame the admin captured from the live view, as an image file.
   @Post(':id/analyze-frame')
   @HttpCode(200)

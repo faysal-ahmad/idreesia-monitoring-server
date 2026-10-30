@@ -26,12 +26,6 @@ export interface VerifyResult {
   error?: string;
 }
 
-export interface TestMatchResult {
-  detectedFaceConfidence: number;
-  currentSimilarityThreshold: number | null;
-  results: { profileId: string; profileName: string; score: number }[];
-}
-
 // Box is YuNet's own (unpadded) face box, in the analyzed image's pixels.
 export interface AnalyzedFace {
   box: { x: number; y: number; width: number; height: number };
@@ -39,6 +33,13 @@ export interface AnalyzedFace {
   sizePx: number;
   quality: number;
   qualityReasons: string[];
+  // The best-scoring profile (test or not) at or above the channel's threshold; null = no match.
+  match: {
+    profileId: string;
+    profileName: string;
+    isTest: boolean;
+    score: number;
+  } | null;
 }
 
 export interface FrameAnalysis {
@@ -47,6 +48,8 @@ export interface FrameAnalysis {
   // The channel's effective minimums (its own, or the server default); 0 = check off.
   minFaceSizePx: number;
   minFaceQuality: number;
+  // The channel's effective similarity threshold, used for each face's match.
+  similarityThreshold: number;
   faces: AnalyzedFace[];
 }
 

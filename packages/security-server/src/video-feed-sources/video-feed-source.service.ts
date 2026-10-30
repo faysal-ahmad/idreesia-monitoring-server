@@ -7,7 +7,6 @@ import {
 import { Prisma, VideoFeedSource } from '@prisma/client';
 import * as cv from '@u4/opencv4nodejs';
 import { parsePgVector } from '../common/pgvector.util';
-import { MediaServerService } from '../media-server/media-server.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaceDetectionService } from '../recognition/face-detection.service';
 import {
@@ -20,6 +19,7 @@ import {
 import { FaceQualityService } from '../recognition/face-quality.service';
 import { FaceRecognitionService } from '../recognition/face-recognition.service';
 import { DetectedFace } from '../recognition/recognition.types';
+import { resolveSimilarityThreshold } from '../recognition/similarity-threshold';
 import { VideoCaptureService } from '../recognition/video-capture.service';
 import {
   mergeStoredCredentials,
@@ -35,9 +35,10 @@ import {
 
 const ACTIVE = { deletedAt: null };
 
-interface TestMatchImageRow {
+interface ProfileImageRow {
   profileId: string;
   profileName: string;
+  isTest: boolean;
   embedding: string;
 }
 
@@ -51,7 +52,6 @@ export class VideoFeedSourceService {
     private readonly faceDetection: FaceDetectionService,
     private readonly faceRecognition: FaceRecognitionService,
     private readonly faceQuality: FaceQualityService,
-    private readonly mediaServer: MediaServerService,
   ) {}
 
   private serialize(source: VideoFeedSource) {
@@ -190,10 +190,32 @@ export class VideoFeedSourceService {
     }
   }
 
+  // Every enrolled profile, test or not, whatever the includeTestProfilesInAlerts setting is.
+  private async loadAllProfileEmbeddings() {
+    const rows = await this.prisma.$queryRaw<ProfileImageRow[]>`
+      SELECT mpi."profileId" as "profileId", mp.name as "profileName", mp."isTest" as "isTest",
+        mpi.embedding::text as embedding
+      FROM security_server."MonitoringProfileImage" mpi
+      JOIN security_server."MonitoringProfile" mp ON mp.id = mpi."profileId"
+      WHERE mp."deletedAt" IS NULL AND mpi.embedding IS NOT NULL
+    `;
+    return rows.map((row) => ({
+      profileId: row.profileId,
+      profileName: row.profileName,
+      isTest: row.isTest,
+      embedding: parsePgVector(row.embedding),
+    }));
+  }
+
   // Rates every face in a frame captured from the live view, so an admin can see the size and
-  // quality the pipeline measures for each one. Boxes are YuNet's own (unpadded), in image pixels.
+  // quality the pipeline measures for each one, and which profile (if any) it matches at the
+  // channel's threshold. Every face is matched, even one the live pipeline would skip for size or
+  // quality, and against test profiles too; this never produces an Alert row.
+  // Boxes are YuNet's own (unpadded), in image pixels.
   async analyzeFrame(id: string, image: Buffer) {
     const source = await this.findRaw(id);
+    const threshold = resolveSimilarityThreshold(source.similarityThreshold);
+    const profiles = await this.loadAllProfileEmbeddings();
     let frame: cv.Mat;
     try {
       frame = cv.imdecode(image);
@@ -209,12 +231,34 @@ export class VideoFeedSourceService {
         const aligned = this.faceRecognition.align(frame, face.landmarks);
         try {
           const quality = this.faceQuality.assess(face, aligned);
+          const embedding = this.faceRecognition.embed(aligned);
+          let match: {
+            profileId: string;
+            profileName: string;
+            isTest: boolean;
+            score: number;
+          } | null = null;
+          for (const profile of profiles) {
+            const score = this.faceRecognition.cosineSimilarity(
+              embedding,
+              profile.embedding,
+            );
+            if (score >= threshold && (!match || score > match.score)) {
+              match = {
+                profileId: profile.profileId,
+                profileName: profile.profileName,
+                isTest: profile.isTest,
+                score,
+              };
+            }
+          }
           return {
             box: face.box,
             confidence: face.confidence,
             sizePx: faceSizePx(face),
             quality: quality.score,
             qualityReasons: quality.reasons,
+            match,
           };
         } finally {
           aligned.release();
@@ -225,77 +269,11 @@ export class VideoFeedSourceService {
         height: frame.rows,
         minFaceSizePx: resolveMinFaceSize(source.minFaceSizePx),
         minFaceQuality: resolveMinFaceQuality(source.minFaceQuality),
+        similarityThreshold: threshold,
         faces,
       };
     } finally {
       frame.release();
     }
-  }
-
-  async testMatch(id: string) {
-    const source = await this.findRaw(id);
-    // An enabled channel is read through its go2rtc re-stream, so test-matching doesn't open an
-    // extra connection to the camera; a disabled one has no re-stream, so the camera is used directly.
-    const captureResult = this.videoCapture.captureFrame(
-      source.enabled
-        ? this.mediaServer.restreamUrl(source.id)
-        : this.videoCapture.buildRtspUrl(parseRtspConfig(source.config)),
-    );
-    if (!captureResult.reachable || !captureResult.frame) {
-      throw new BadRequestException(
-        captureResult.error ?? 'Could not capture a frame from this channel.',
-      );
-    }
-
-    // The embedding comes from the full frame, as it does live.
-    const faces = this.detectAsLive(captureResult.frame, source);
-    if (faces.length === 0) {
-      throw new BadRequestException('No face detected in the captured frame.');
-    }
-    const face = faces.reduce((best, current) =>
-      current.confidence > best.confidence ? current : best,
-    );
-    const aligned = this.faceRecognition.align(
-      captureResult.frame,
-      face.landmarks,
-    );
-    const embedding = this.faceRecognition.embed(aligned);
-
-    // Test-match calibration only ever compares against isTest profiles — real watch-list
-    // profiles are never in scope here, and this can never produce an Alert row.
-    const testImages = await this.prisma.$queryRaw<TestMatchImageRow[]>`
-      SELECT mpi."profileId" as "profileId", mp.name as "profileName", mpi.embedding::text as embedding
-      FROM security_server."MonitoringProfileImage" mpi
-      JOIN security_server."MonitoringProfile" mp ON mp.id = mpi."profileId"
-      WHERE mp."isTest" = true AND mp."deletedAt" IS NULL AND mpi.embedding IS NOT NULL
-    `;
-
-    const bestScoreByProfile = new Map<
-      string,
-      { profileId: string; profileName: string; score: number }
-    >();
-    for (const row of testImages) {
-      const storedEmbedding = parsePgVector(row.embedding);
-      const score = this.faceRecognition.cosineSimilarity(
-        embedding,
-        storedEmbedding,
-      );
-      const existing = bestScoreByProfile.get(row.profileId);
-      if (!existing || score > existing.score) {
-        bestScoreByProfile.set(row.profileId, {
-          profileId: row.profileId,
-          profileName: row.profileName,
-          score,
-        });
-      }
-    }
-
-    return {
-      detectedFaceConfidence: face.confidence,
-      currentSimilarityThreshold: source.similarityThreshold,
-      results: Array.from(bestScoreByProfile.values()).sort(
-        (a, b) => b.score - a.score,
-      ),
-    };
   }
 }

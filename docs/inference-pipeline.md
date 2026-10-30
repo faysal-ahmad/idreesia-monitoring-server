@@ -11,7 +11,7 @@ How the security server turns camera streams into alerts: what happens to each f
                      └──WebSocket (MSE)──▶ browser (channels page live view)
 ```
 
-- **go2rtc** pulls each enabled camera once and re-streams it. Nothing in the server connects to a camera directly, except `test-match` on a _disabled_ channel.
+- **go2rtc** pulls each enabled camera once and re-streams it. Nothing in the server connects to a camera directly, except the add/edit form's reachability check.
 - **Ingestion processes** (default 4) each own a share of the channels. For each of its channels a process reads the stream and runs recognition on sampled frames. When a face matches, it encodes the snapshot and sends the alert to the main process.
 - **The main process** is the Nest app: the HTTP API, the database, alert storage and the Alerts page's live stream, profile enrollment, and the channels page's frame tools. It decides which process reads which channel and collects health and stats from all of them.
 
@@ -107,10 +107,9 @@ Defined in `src/ingestion/process/ingestion-protocol.ts`. They're sent over Node
 The main process still loads both models, for work that is occasional and driven by people:
 
 - profile photo enrollment and the embedding backfill;
-- `analyze-frame` on the channels page, where the browser sends a frame captured from the live view;
-- `test-match`, which captures one frame from the re-stream, or from the camera if the channel is disabled.
+- `analyze-frame` on the channels page, where the browser sends a frame captured from the live view and every face in it is rated and matched.
 
-These are synchronous OpenCV calls. `test-match` also blocks the main event loop while it opens the stream. The live view on the channels page doesn't involve the server: the browser plays the go2rtc re-stream directly.
+These are synchronous OpenCV calls. The live view on the channels page doesn't involve the server: the browser plays the go2rtc re-stream directly.
 
 ## Performance details
 

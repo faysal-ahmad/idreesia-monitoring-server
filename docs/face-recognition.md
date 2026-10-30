@@ -65,14 +65,13 @@ A channel is one RTSP camera (`VideoFeedSource`).
 - **Disabling vs deleting:** a channel with alert history can't be deleted, only disabled, so every alert can still say which camera it came from. The `Alert` foreign key is `Restrict`, and the API reports a clear error. A channel whose camera stays unreachable for about 6 minutes of retries is disabled automatically.
 - **Live view and frame tools** on the channels page:
   - The browser plays the go2rtc re-stream directly.
-  - **Capture** sends the current live-view frame to the server (`analyze-frame`), which shows the size and quality score of every face in it, as the live pipeline measures them.
-  - **Test match** captures a frame on the server and compares the strongest face against the **test profiles only**. The admin uses the resulting scores to choose the channel's `similarityThreshold` by observing real scores, not by guessing a number.
+  - **Capture** sends the current live-view frame to the server (`analyze-frame`), which shows the size and quality score of every face in it, as the live pipeline measures them. It also matches every face (even one the live pipeline would skip for size or quality) against **all** profiles, test and monitoring alike, at the channel's `similarityThreshold`; a matched face also shows the profile's name and score. The admin uses these real scores to choose the threshold, not by guessing a number. It never creates an alert.
 
 ## Monitoring profiles
 
 A `MonitoringProfile` is a person: a name and an `isTest` flag. It has one or more `MonitoringProfileImage` rows.
 
-- **Test profiles** (`isTest: true`) exist for calibration. Test match only compares against them, and they're left out of the live match set unless the **Include Test Profiles in Alerts** setting is on. That setting exists for end-to-end testing: walk past a camera and see the alert without enrolling someone on the real watch list. The Profiles page shows test and monitoring profiles on separate tabs.
+- **Test profiles** (`isTest: true`) exist for calibration. They're left out of the live match set unless the **Include Test Profiles in Alerts** setting is on. That setting exists for end-to-end testing: walk past a camera and see the alert without enrolling someone on the real watch list. The Profiles page shows test and monitoring profiles on separate tabs.
 - **One embedding per photo, not averaged per person.** Each image keeps its own SFace embedding in a pgvector `vector(128)` column. A face is compared against every stored embedding. Averaging photos taken at different angles and in different light would blur the signal, and the extra comparisons cost nothing at this scale.
 - **Embedding versions.** Each embedding records the pipeline version that produced it (`EMBEDDING_MODEL_VERSION`). Embeddings from different versions aren't comparable, so `EmbeddingBackfillService` recomputes any stored under an older version, from the stored image, at startup.
 - **Default image:** an optional thumbnail for the list. It plays no part in matching.

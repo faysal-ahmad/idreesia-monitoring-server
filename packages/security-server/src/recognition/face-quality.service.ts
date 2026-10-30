@@ -14,7 +14,7 @@ export interface FaceQuality {
   reasons: string[];
 }
 
-// Starting weights, to be tuned against the test-match flow. Size, sharpness and pose dominate
+// Starting weights, to be tuned against live-view frame captures. Size, sharpness and pose dominate
 // because they're what most limits SFace's 112x112 embedding on uncontrolled social-media photos.
 const WEIGHTS: Record<FaceQualitySignal, number> = {
   size: 0.25,

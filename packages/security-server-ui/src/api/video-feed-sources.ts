@@ -2,7 +2,6 @@ import { api } from './client';
 import {
   FrameAnalysis,
   RtspConfig,
-  TestMatchResult,
   VerifyResult,
   VideoFeedSource,
 } from './types';
@@ -39,8 +38,6 @@ export const videoFeedSourcesApi = {
   remove: (id: string) => api.delete<void>(`/video-feed-sources/${id}`),
   verify: (input: VerifyVideoFeedSourceInput) =>
     api.post<VerifyResult>('/video-feed-sources/verify', input),
-  testMatch: (id: string) =>
-    api.post<TestMatchResult>(`/video-feed-sources/${id}/test-match`),
   analyzeFrame: (id: string, frame: Blob) => {
     const formData = new FormData();
     formData.append('file', frame, 'frame.jpg');
