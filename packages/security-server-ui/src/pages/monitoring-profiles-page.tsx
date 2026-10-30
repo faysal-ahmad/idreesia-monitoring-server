@@ -3,10 +3,12 @@ import {
   PictureOutlined,
   PlusOutlined,
   ReloadOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   App,
+  Avatar,
   Button,
   Pagination,
   Popconfirm,
@@ -17,7 +19,10 @@ import {
   Typography,
 } from 'antd';
 import { useState } from 'react';
-import { monitoringProfilesApi } from '../api/monitoring-profiles';
+import {
+  monitoringProfilesApi,
+  profileThumbnailUrl,
+} from '../api/monitoring-profiles';
 import { MonitoringProfileSummary } from '../api/types';
 import {
   ProfileFormModal,
@@ -103,14 +108,26 @@ export default function MonitoringProfilesPage() {
       title: 'Name',
       dataIndex: 'name',
       render: (name: string, record: MonitoringProfileSummary) => (
-        <Link
-          onClick={() => {
-            setEditingProfile(record);
-            setFormOpen(true);
-          }}
-        >
-          {name}
-        </Link>
+        <div className="profile-name-cell">
+          <Avatar
+            shape="square"
+            size={40}
+            icon={<UserOutlined />}
+            src={
+              record.thumbnailImageId
+                ? profileThumbnailUrl(record.id, record.thumbnailImageId)
+                : undefined
+            }
+          />
+          <Link
+            onClick={() => {
+              setEditingProfile(record);
+              setFormOpen(true);
+            }}
+          >
+            {name}
+          </Link>
+        </div>
       ),
     },
     { title: 'Photos', dataIndex: 'imageCount' },

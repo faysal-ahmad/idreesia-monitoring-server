@@ -125,8 +125,12 @@ model MonitoringProfile {
   updatedAt DateTime @updatedAt
   // Deleted, but kept until the ERP has been told (see ErpSyncService). Hidden everywhere else.
   deletedAt DateTime?
+  // The photo shown as the profile's thumbnail on the list; no part in matching. Synced with the
+  // ERP. null (never chosen, or the chosen photo was removed) = its oldest photo.
+  defaultImageId String?                 @unique
+  defaultImage   MonitoringProfileImage? @relation("ProfileDefaultImage", fields: [defaultImageId], references: [id], onDelete: SetNull)
 
-  images MonitoringProfileImage[]
+  images MonitoringProfileImage[] @relation("ProfileImages")
   alerts Alert[]
 
   @@schema("security_server")
@@ -140,7 +144,7 @@ model MonitoringProfileImage {
   // The ERP's id for this photo; null until the ERP has received it.
   externalId            String?                    @unique
   profileId             String
-  profile               MonitoringProfile          @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profile               MonitoringProfile          @relation("ProfileImages", fields: [profileId], references: [id], onDelete: Cascade)
   image                 Bytes
   // 128-d SFace embedding. Prisma has no native vector type support, so reads/
   // writes to this column go through $queryRaw/$executeRaw.
@@ -151,11 +155,8 @@ model MonitoringProfileImage {
   // different versions aren't comparable; anything not on the current version is recomputed from
   // `image` at startup by EmbeddingBackfillService. null = produced before versioning existed.
   embeddingModelVersion String?
-  // A FaceQuality (see face-quality.service.ts): how usable the photo is for recognition. Shown to
-  // the admin only; it plays no part in matching and isn't sent to the ERP. null = no face found,
-  // or not scored yet (photos stored before scoring existed get it from "Recalculate quality").
-  quality               Json?
   createdAt             DateTime                   @default(now())
+  defaultFor            MonitoringProfile?         @relation("ProfileDefaultImage")
 
   @@schema("security_server")
 }

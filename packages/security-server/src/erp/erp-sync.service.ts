@@ -56,6 +56,9 @@ type ChangedProfile =
       name: string;
       isTest: boolean;
       images: { id: string; externalId: string | null }[];
+      // The ERP's id for its default photo (one of `images`); null = none chosen. Absent from an
+      // ERP that predates it - this server's own choice is kept.
+      defaultImageId?: string | null;
     };
 
 interface Changes {
@@ -388,6 +391,8 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       select: { id: true, externalId: true },
     });
     const kept = new Set<string>();
+    // ERP photo id -> local id, for mapping the ERP's default photo below.
+    const localIdByErpId = new Map<string, string>();
     let linksMissing = remote.externalId !== profile.id;
     for (const image of remote.images) {
       const match = localImages.find(
@@ -396,6 +401,7 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       );
       if (match) {
         kept.add(match.id);
+        localIdByErpId.set(image.id, match.id);
         if (match.externalId !== image.id) {
           await this.prisma.monitoringProfileImage.update({
             where: { id: match.id },
@@ -408,6 +414,7 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       const imageId = await this.downloadImage(profile, image.id);
       if (imageId) {
         kept.add(imageId);
+        localIdByErpId.set(image.id, imageId);
         summary.pulled.photos += 1;
         linksMissing = true;
       }
@@ -420,6 +427,23 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
         where: { id: { in: removed } },
       });
       summary.pulled.photos += removed.length;
+    }
+
+    // A photo that couldn't be downloaded leaves the default as it is; it's retried next time.
+    if (remote.defaultImageId !== undefined) {
+      const defaultImageId =
+        remote.defaultImageId === null
+          ? null
+          : localIdByErpId.get(remote.defaultImageId);
+      if (
+        defaultImageId !== undefined &&
+        defaultImageId !== profile.defaultImageId
+      ) {
+        await this.prisma.monitoringProfile.update({
+          where: { id: profile.id },
+          data: { defaultImageId, updatedAt },
+        });
+      }
     }
     if (linksMissing) toLink.add(profile.id);
   }
@@ -443,7 +467,7 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
       }
       return await this.profiles.insertImage(
         profile.id,
-        embedded ?? { embedding: null, jpeg, quality: null },
+        embedded ?? { embedding: null, jpeg },
         erpImageId,
       );
     } catch (error) {
@@ -589,6 +613,8 @@ export class ErpSyncService implements OnModuleInit, OnModuleDestroy {
             deleted: false,
             name: profile.name,
             isTest: profile.isTest,
+            // This server's id for its default photo (one of `images`); null = none chosen.
+            defaultImageId: profile.defaultImageId,
             images: images.map(({ id, externalId, image }) => ({
               localId: id,
               erpId: externalId,

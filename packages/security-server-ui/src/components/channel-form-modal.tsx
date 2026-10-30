@@ -12,6 +12,11 @@ import {
   Space,
 } from 'antd';
 import { useEffect } from 'react';
+import {
+  DEFAULT_MIN_FACE_QUALITY,
+  DEFAULT_MIN_FACE_SIZE_PX,
+  DEFAULT_SIMILARITY_THRESHOLD,
+} from '../api/channel-defaults';
 import { videoFeedSourcesApi } from '../api/video-feed-sources';
 import { VideoFeedSource } from '../api/types';
 
@@ -232,7 +237,7 @@ export function ChannelFormModal({
             <Form.Item
               name="similarityThreshold"
               label="Similarity threshold"
-              extra="Minimum cosine similarity for a face on this channel to raise an alert. Leave blank to use the default (0.36)."
+              extra={`Minimum cosine similarity for a face on this channel to raise an alert. Leave blank to use the default (${DEFAULT_SIMILARITY_THRESHOLD}).`}
             >
               <InputNumber
                 min={0}
@@ -245,7 +250,7 @@ export function ChannelFormModal({
             <Form.Item
               name="minFaceSizePx"
               label="Min face size (px)"
-              extra="Faces smaller than this (in the camera's own pixels) are ignored. Lower catches people further away but uses more CPU. Leave blank for the default (96), or 0 to turn the check off."
+              extra={`Faces smaller than this (in the camera's own pixels) are ignored. Lower catches people further away but uses more CPU. Leave blank for the default (${DEFAULT_MIN_FACE_SIZE_PX}), or 0 to turn the check off.`}
             >
               <InputNumber
                 min={0}
@@ -259,7 +264,7 @@ export function ChannelFormModal({
             <Form.Item
               name="minFaceQuality"
               label="Min face quality"
-              extra="Faces scoring below this (0-100: blur, angle, lighting, size) are ignored. Leave blank for the default (40), or 0 to turn the check off."
+              extra={`Faces scoring below this (0-100: blur, angle, lighting, size) are ignored. Leave blank for the default (${DEFAULT_MIN_FACE_QUALITY}), or 0 to turn the check off.`}
             >
               <InputNumber
                 min={0}

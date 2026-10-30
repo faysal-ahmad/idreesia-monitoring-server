@@ -24,6 +24,11 @@ import {
 } from '../components/channel-form-modal';
 import { LiveFeedModal } from '../components/live-feed';
 import { TestMatchModal } from '../components/test-match-modal';
+import {
+  DEFAULT_MIN_FACE_QUALITY,
+  DEFAULT_MIN_FACE_SIZE_PX,
+  DEFAULT_SIMILARITY_THRESHOLD,
+} from '../api/channel-defaults';
 import { videoFeedSourcesApi } from '../api/video-feed-sources';
 import { VideoFeedSource } from '../api/types';
 
@@ -226,23 +231,23 @@ export default function ChannelsPage() {
               title: 'Similarity Threshold',
               dataIndex: 'similarityThreshold',
               render: (value: number | null) =>
-                value === null ? 'Default' : value.toFixed(2),
+                (value ?? DEFAULT_SIMILARITY_THRESHOLD).toFixed(2),
             },
             {
               title: 'Min Face Size',
               dataIndex: 'minFaceSizePx',
-              render: (value: number | null) =>
-                value === null
-                  ? 'Default'
-                  : value === 0
-                    ? 'Off'
-                    : `${value} px`,
+              render: (value: number | null) => {
+                const size = value ?? DEFAULT_MIN_FACE_SIZE_PX;
+                return size === 0 ? 'Off' : `${size} px`;
+              },
             },
             {
               title: 'Min Face Quality',
               dataIndex: 'minFaceQuality',
-              render: (value: number | null) =>
-                value === null ? 'Default' : value === 0 ? 'Off' : value,
+              render: (value: number | null) => {
+                const quality = value ?? DEFAULT_MIN_FACE_QUALITY;
+                return quality === 0 ? 'Off' : quality;
+              },
             },
             { title: 'Alerts', dataIndex: 'alertCount' },
             {
